@@ -22,7 +22,7 @@ async function sendMessage(chatId, text, replyToMessageId = null) { // Hapus par
         return;
     }
     try {
-        const MAX_LENGTH = 9096; // Batas Telegram
+        const MAX_LENGTH = 4096; // Batas Telegram
         let messageToSend = text;
         // Pemotongan pesan sederhana
         if (text && text.length > MAX_LENGTH) {
