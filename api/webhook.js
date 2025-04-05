@@ -27,7 +27,7 @@ function escapeLegacyMarkdown(text) {
 async function sendMessage(chatId, text, replyToMessageId = null, parse_mode = null) {
     if (!BOT_TOKEN) { /*...*/ return; }
     try {
-        const MAX_LENGTH = 4096;
+        const MAX_LENGTH = 9096;
         let messageToSend = text;
         // Pemotongan pesan (logika bisa disederhanakan untuk legacy markdown)
         if (text.length > MAX_LENGTH) {
