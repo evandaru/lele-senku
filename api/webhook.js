@@ -113,13 +113,6 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
             topP: 0.9, // Bisa juga sedikit dinaikkan
             // maxOutputTokens: 1024 // Batasi output jika perlu
         },
-        // Safety Settings (opsional tapi bagus)
-        safetySettings: [
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }
-        ]
 
     };
 
@@ -296,23 +289,16 @@ module.exports = async (req, res) => {
                 await sendMessage(chatId, `Iya ${nameForBotGreeting}, mau cari info apa pakai /info? Contoh: \`/info berita terkini tentang AI\``, messageIdToReply, 'MarkdownV2');
             }
         }
-        // ++ Jika bukan /info, cek trigger lain (private, /ai, sofia, sof, reply) ++
+
         else if (chatType === 'private') {
             shouldProcessAI = true;
             promptForAI = messageText;
             enableGrounding = false; // Grounding nonaktif untuk chat biasa
             console.log(`Processing private message ${messageId} (no grounding) from ${nameForAIContext} (${userId})`);
         } else if (chatType === 'group' || chatType === 'supergroup') {
-            // ... (logika trigger /ai, sofia, sof, reply sama persis) ...
             let triggerWord = null;
-            if (lowerCaseText.startsWith('/ai ')) {
-                triggerWord = '/ai ';
-                promptForAI = messageText.substring(4).trim();
-            } else if (lowerCaseText.startsWith('sofia ')) {
-                triggerWord = 'sofia ';
-                promptForAI = messageText.substring(6).trim();
-            } else if (lowerCaseText.startsWith('sof ')) {
-                triggerWord = 'sof ';
+            if (lowerCaseText.startsWith('/chat ')) {
+                triggerWord = '/chat ';
                 promptForAI = messageText.substring(4).trim();
             } else if (BOT_USER_ID && message.reply_to_message?.from?.id === BOT_USER_ID) {
                 triggerWord = 'reply_to_bot';
