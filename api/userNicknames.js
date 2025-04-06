@@ -1,5 +1,5 @@
 const userNicknames = {
-    'evndaru': 'pojan',
+    'evndaru': 'lele',
     'kfvxy9': 'mbak febri',
     'hhh111iii222': 'aska',
     'qazzzaaq': 'ojak',
