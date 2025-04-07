@@ -102,7 +102,7 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
         contents: history.filter(h => h.role === 'user' || h.role === 'model'), // Hanya user/model turns
         generationConfig: {
             // Sesuaikan parameter generasi jika perlu (temp 0.7 mungkin cocok untuk gaya informal)
-            temperature: 0.25,
+            temperature: 1.0,
             topP: 0.9,
         },
     };
