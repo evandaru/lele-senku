@@ -501,7 +501,7 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
              const textPart = candidate.content?.parts?.find(part => part.text);
              if (textPart?.text) {
                  console.warn(`Gemini Image API (${modelToUse}) returned text instead of image for chat ${chatId}: "${textPart.text.substring(0,100)}..."`);
-                 return { error: `Hmm ${userName}, Coba ulangi` };
+                 return { error: `Hmm ${userName}, Gambar mu sus coba ganti prompt` };
              } else {
                 console.error(`Gemini Image response format unexpected or missing image data for chat ${chatId}.`, JSON.stringify(response.data, null, 2));
                 return { error: `Waduh ${userName}, gambar mu sus ;-;` };
