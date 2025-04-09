@@ -363,6 +363,7 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
 
 
 // --- >>> Handler Utama Vercel DIMODIFIKASI <<< ---
+// --- >>> Handler Utama Vercel DIMODIFIKASI <<< ---
 module.exports = async (req, res) => {
     if (req.method !== 'POST') { return res.status(405).json({ error: 'Method Not Allowed' }); }
     if (!req.body || typeof req.body !== 'object') {
@@ -401,9 +402,14 @@ module.exports = async (req, res) => {
         const lowerCaseText = messageText.toLowerCase();
         const BOT_USER_ID = BOT_TOKEN ? parseInt(BOT_TOKEN.split(':')[0], 10) : null;
 
+        // --- >>> DEFINISIKAN TRIGGER CHAT DI SINI <<< ---
+        // Pindahkan definisi ini ke atas agar bisa dipakai di logic vision dan teks
+        const chatTriggers = ['/chat ', 'lele ', 'le ', 'tanya ']; // Spasi penting
+
         // --- 1. Handle /clear (Tetap di awal) ---
         if (lowerCaseText === '/clear') {
-            if (chatHistories[chatId]) {
+            // ... (kode /clear tetap sama) ...
+             if (chatHistories[chatId]) {
                 delete chatHistories[chatId];
                 await sendMessage(chatId, `Oke ${nameForBotGreeting}, history obrolan sudah dibersihkan!`, messageIdToReply);
                 console.log(`History cleared for chat ${chatId} by ${nameForAIContext} (${userId})`);
@@ -413,80 +419,79 @@ module.exports = async (req, res) => {
             return res.status(200).send('OK');
         }
 
-        // --- >>> 2. Cek Balasan ke Gambar (Vision Trigger) <<< ---
-        if (repliedToMessage && repliedToMessage.photo && repliedToMessage.photo.length > 0) {
-            console.log(`Detected reply to a message with photo by ${nameForAIContext} (${userId})`);
+        // --- 2. Cek Kondisi Vision: Reply ke Gambar + Trigger Chat di Teks Balasan ---
+        if (repliedToMessage && repliedToMessage.photo && repliedToMessage.photo.length > 0 && messageText) {
+             console.log(`Detected reply to photo by ${nameForAIContext} (${userId}). Checking text trigger...`);
 
-            // Ambil file_id dari resolusi tertinggi (biasanya terakhir)
-            const photo = repliedToMessage.photo[repliedToMessage.photo.length - 1];
-            const fileId = photo.file_id;
+             let visionTriggerFound = false;
+             for (const trigger of chatTriggers) {
+                 if (lowerCaseText.startsWith(trigger)) {
+                     // --- Kondisi Vision Terpenuhi! ---
+                     visionTriggerFound = true;
+                     triggerWordUsed = `vision_${trigger.trim()}`;
+                     promptForAI = messageText.substring(trigger.length).trim(); // Ambil teks setelah trigger
+                     console.log(`Vision trigger '${trigger.trim()}' found in reply text.`);
 
-            try {
-                 // Kirim 'typing' action lebih awal
-                 await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'typing' });
+                     // --- Lakukan Fetch Gambar (HANYA jika trigger cocok) ---
+                     try {
+                         // Kirim 'typing' action
+                         await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'typing' });
 
-                // Step 1: Get file path from Telegram API
-                console.log(`Getting file path for file_id: ${fileId}`);
-                const getFileResponse = await axios.get(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
-                const filePath = getFileResponse.data?.result?.file_path;
+                         const photo = repliedToMessage.photo[repliedToMessage.photo.length - 1];
+                         const fileId = photo.file_id;
 
-                if (!filePath) {
-                    throw new Error('File path not found in Telegram response.');
-                }
-                console.log(`Got file path: ${filePath}`);
+                         console.log(`Getting file path for file_id: ${fileId}`);
+                         const getFileResponse = await axios.get(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
+                         const filePath = getFileResponse.data?.result?.file_path;
 
-                // Step 2: Construct download URL
-                const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+                         if (!filePath) { throw new Error('File path not found.'); }
+                         console.log(`Got file path: ${filePath}`);
 
-                // Step 3: Download the image data as ArrayBuffer
-                console.log(`Downloading image from: ${fileUrl}`);
-                const imageResponse = await axios.get(fileUrl, {
-                    responseType: 'arraybuffer' // Penting!
-                });
+                         const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+                         console.log(`Downloading image from: ${fileUrl}`);
+                         const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
 
-                // Step 4: Convert to Base64
-                imageBase64 = Buffer.from(imageResponse.data).toString('base64');
+                         imageBase64 = Buffer.from(imageResponse.data).toString('base64');
+                         if (filePath.toLowerCase().endsWith('.png')) { imageMimeType = 'image/png'; }
+                         else if (filePath.toLowerCase().endsWith('.webp')) { imageMimeType = 'image/webp'; }
+                         else { imageMimeType = 'image/jpeg'; }
 
-                // Step 5: Determine MIME type (Asumsi JPEG dari Telegram, bisa diperbaiki jika perlu)
-                // Anda bisa coba cek beberapa byte pertama (magic numbers) jika ingin lebih akurat
-                if (filePath.toLowerCase().endsWith('.png')) {
-                    imageMimeType = 'image/png';
-                } else if (filePath.toLowerCase().endsWith('.webp')) {
-                    imageMimeType = 'image/webp';
-                } else {
-                    imageMimeType = 'image/jpeg'; // Default
-                }
+                         console.log(`Image downloaded (${(imageBase64.length * 3/4 / 1024).toFixed(2)} KB) and encoded. MimeType: ${imageMimeType}`);
 
-                console.log(`Image downloaded (${(imageBase64.length * 3/4 / 1024).toFixed(2)} KB) and encoded to Base64. MimeType: ${imageMimeType}`);
+                         // --- Set flag untuk proses AI ---
+                         shouldProcessAI = true;
+                         enableGrounding = false; // Grounding off untuk vision
+                         // messageIdToReply = messageId; // Balas ke pesan teks pengguna
 
-                // Tentukan prompt berdasarkan teks balasan pengguna
-                const visionTriggers = ["ini apa", "apa ini", "jelaskan", "deskripsikan", "gambar apa", "le ini apa"];
-                if (!messageText || visionTriggers.some(trigger => lowerCaseText.includes(trigger))) {
-                    promptForAI = ""; // Gunakan prompt default "Describe this image" di getGeminiResponse
-                    triggerWordUsed = "vision_describe";
-                } else {
-                    promptForAI = messageText; // Gunakan teks pengguna sebagai prompt tambahan
-                    triggerWordUsed = "vision_query";
-                }
-                shouldProcessAI = true; // Siap proses dengan AI Vision
-                enableGrounding = false; // Nonaktifkan grounding untuk vision
-                // messageIdToReply = messageId; // Balas ke pesan teks pengguna yg me-reply
+                     } catch (error) {
+                         console.error(`Error fetching/processing image for vision request (file_id: ${fileId}):`, error.message);
+                         await sendMessage(chatId, `Waduh ${nameForBotGreeting}, gagal ngambil/proses gambarnya nih. Padahal triggernya udah bener. Coba lagi ya.`, messageId);
+                         shouldProcessAI = false; // Gagalkan proses jika gambar error
+                         visionTriggerFound = false; // Reset flag
+                     }
+                     // --- Akhir Fetch Gambar ---
 
-            } catch (error) {
-                console.error(`Error fetching or processing image from Telegram (file_id: ${fileId}):`, error.message);
-                await sendMessage(chatId, `Waduh ${nameForBotGreeting}, gagal ngambil atau proses gambarnya nih dari Telegram. Coba lagi nanti ya.`, messageId);
-                // Jangan lanjutkan pemrosesan AI jika gambar gagal diambil
-                shouldProcessAI = false;
-            }
-        }
+                     break; // Hentikan loop trigger jika sudah ketemu
+                 }
+             } // Akhir loop for trigger
+
+             if (!visionTriggerFound && messageText) {
+                 // Jika me-reply gambar TAPI teksnya tidak diawali trigger yang valid
+                 console.log(`Ignoring reply to photo from ${nameForAIContext} (${userId}) because text does not start with a valid chat trigger.`);
+                 // shouldProcessAI tetap false
+             }
+
+        } // --- Akhir Cek Kondisi Vision ---
 
 
-        // --- 3. Jika BUKAN Balasan ke Gambar, Cek Trigger Teks Biasa ---
-        if (!shouldProcessAI) { // Hanya jika belum di-set oleh logic vision di atas
+        // --- 3. Jika BUKAN Trigger Vision, Cek Trigger Teks Biasa ---
+        // Blok ini hanya akan jalan jika shouldProcessAI masih false
+        if (!shouldProcessAI) {
             enableGrounding = false; // Reset grounding flag
 
-            // --- Cek Trigger Grounding ---
+            // --- Cek Trigger Grounding (Teks Biasa) ---
             const groundingTriggers = ['/info ', 'inpo ', 'kabar ', '/po '];
+            let groundingTriggerFound = false; // Flag khusus grounding
             for (const trigger of groundingTriggers) {
                 if (lowerCaseText.startsWith(trigger)) {
                     triggerWordUsed = trigger.trim();
@@ -494,25 +499,26 @@ module.exports = async (req, res) => {
                     if (promptForAI) {
                         shouldProcessAI = true;
                         enableGrounding = true; // Aktifkan Grounding
+                        groundingTriggerFound = true;
                         console.log(`Processing TEXT message ${messageId} WITH grounding (Trigger: '${triggerWordUsed}') from ${nameForAIContext} (${userId})`);
                     } else {
                         await sendMessage(chatId, `Iya ${nameForBotGreeting}, mau cari ${triggerWordUsed} apa? Contoh: ${triggerWordUsed} berita terkini tentang AI`, messageIdToReply);
-                        shouldProcessAI = false;
+                        shouldProcessAI = false; // Jangan proses AI jika prompt kosong
                     }
-                    break;
+                    break; // Keluar loop grounding
                 }
             }
 
-            // --- Jika BUKAN Grounding, Cek Kondisi Lain (Private, Group Trigger, Reply Teks) ---
-            if (!triggerWordUsed && !shouldProcessAI) {
+            // --- Jika BUKAN Grounding, Cek Kondisi Lain (Private, Group Trigger Teks, Reply Teks) ---
+            // Hanya jalan jika groundingTriggerFound juga false
+            if (!groundingTriggerFound && !shouldProcessAI) {
                 if (chatType === 'private') {
-                    // Jangan proses jika pesan teks kosong di private chat
-                    if (messageText) {
+                    // ... (logika private chat tetap sama, cek juga grounding implisit jika perlu) ...
+                     if (messageText) {
                         shouldProcessAI = true;
                         promptForAI = messageText;
                         triggerWordUsed = 'private_chat';
-                        enableGrounding = false; // Default grounding off untuk chat biasa
-                        // Cek apakah user ingin grounding di private chat
+                        enableGrounding = false; // Default off
                         if (lowerCaseText.startsWith("cari info ") || lowerCaseText.startsWith("inpo ")) {
                              const query = messageText.substring(messageText.indexOf(" ") + 1).trim();
                              if(query) {
@@ -528,113 +534,127 @@ module.exports = async (req, res) => {
                          console.log(`Ignoring empty private message ${messageId} from ${nameForAIContext} (${userId})`);
                          shouldProcessAI = false;
                     }
+
                 } else if (chatType === 'group' || chatType === 'supergroup') {
-                    // --- Cek Trigger Chat Biasa (Grup) ---
-                    const chatTriggers = ['/chat ', 'lele ', 'le ', 'tanya '];
-                    for (const trigger of chatTriggers) {
-                        if (lowerCaseText.startsWith(trigger)) {
-                            triggerWordUsed = trigger.trim();
-                            promptForAI = messageText.substring(trigger.length).trim();
-                            break;
+
+                    // --- Cek Trigger Chat Biasa (Grup - Teks Saja) ---
+                    // Pastikan ini BUKAN reply ke gambar (sudah dicegah oleh `if (!shouldProcessAI)`)
+                    let textTriggerFound = false;
+                    if (messageText) { // Hanya cek jika ada teks
+                         for (const trigger of chatTriggers) {
+                            if (lowerCaseText.startsWith(trigger)) {
+                                triggerWordUsed = trigger.trim();
+                                promptForAI = messageText.substring(trigger.length).trim();
+                                textTriggerFound = true; // Tandai trigger teks ditemukan
+                                break;
+                            }
                         }
                     }
 
                     // --- Cek Reply ke Bot (Teks) ---
-                    if (!triggerWordUsed && BOT_USER_ID && repliedToMessage?.from?.id === BOT_USER_ID && repliedToMessage.text) {
-                        // Pastikan yang direply BUKAN gambar (sudah ditangani di atas)
-                         if (!repliedToMessage.photo) {
-                              triggerWordUsed = 'reply_to_bot_text';
-                              promptForAI = messageText; // Gunakan teks balasan user
-                              // Tambahkan konteks dari pesan bot yang direply
-                              promptForAI = `Ini adalah respons saya sebelumnya: "${repliedToMessage.text}"\n\nSekarang tanggapi ini: "${messageText}"`;
-                              console.log(`Added context from bot's previous message ${repliedToMessage.message_id}`);
-                              // messageIdToReply = repliedToMessage.message_id; // Opsi: Balas ke pesan bot
-                         }
-                    }
+                    // Hanya jika belum ada trigger teks biasa DAN ini reply ke teks bot
+                    if (!textTriggerFound && BOT_USER_ID && repliedToMessage?.from?.id === BOT_USER_ID && repliedToMessage.text) {
+                         // Pastikan yang direply BUKAN gambar (sudah ditangani di atas)
+                          if (!repliedToMessage.photo) {
+                               triggerWordUsed = 'reply_to_bot_text';
+                               promptForAI = messageText; // Gunakan teks balasan user
+                               promptForAI = `Ini adalah respons saya sebelumnya: "${repliedToMessage.text}"\n\nSekarang tanggapi ini: "${messageText}"`;
+                               console.log(`Added context from bot's previous message ${repliedToMessage.message_id}`);
+                               textTriggerFound = true; // Tandai sebagai trigger yang valid
+                          }
+                     }
 
-                   // --- Tambah Konteks jika Reply ke Pesan Teks Orang Lain (berlaku untuk trigger chat) ---
-                   // (Pastikan BUKAN reply ke bot atau gambar, sudah ditangani)
-                   if (triggerWordUsed && triggerWordUsed !== 'reply_to_bot_text' && repliedToMessage && repliedToMessage.text && repliedToMessage.from?.id !== BOT_USER_ID) {
-                        const repliedText = repliedToMessage.text;
-                        let originalSenderName = 'seseorang';
-                         const repliedFrom = repliedToMessage.from;
-                         if (repliedFrom) {
-                             const repliedUsername = repliedFrom.username ? repliedFrom.username.toLowerCase() : null;
-                             const repliedNickname = repliedUsername ? userNicknames[repliedUsername] : null;
-                            originalSenderName = repliedNickname || repliedFrom.first_name || (repliedFrom.username ? `@${repliedFrom.username}` : `User ${repliedFrom.id}`);
-                         }
+                    // --- Tambah Konteks jika Reply ke Pesan Teks Orang Lain (berlaku untuk trigger chat biasa) ---
+                    // Hanya jika trigger chat biasa ditemukan (`textTriggerFound=true` DARI loop `chatTriggers`)
+                    // DAN ini adalah reply ke pesan teks orang lain
+                    if (textTriggerFound && triggerWordUsed !== 'reply_to_bot_text' && repliedToMessage && repliedToMessage.text && repliedToMessage.from?.id !== BOT_USER_ID) {
+                         const repliedText = repliedToMessage.text;
+                         let originalSenderName = 'seseorang';
+                          const repliedFrom = repliedToMessage.from;
+                          if (repliedFrom) {
+                              const repliedUsername = repliedFrom.username ? repliedFrom.username.toLowerCase() : null;
+                              const repliedNickname = repliedUsername ? userNicknames[repliedUsername] : null;
+                             originalSenderName = repliedNickname || repliedFrom.first_name || (repliedFrom.username ? `@${repliedFrom.username}` : `User ${repliedFrom.id}`);
+                          }
 
-                        // Format ulang promptForAI yang sudah ada (dari trigger chat)
-                        promptForAI = `Berikut adalah pesan dari ${originalSenderName}: "${repliedText}"\n\nTanggapi pesan tersebut dengan memperhatikan pertanyaan/pernyataan saya berikut: "${promptForAI}"`;
-                        console.log(`Added context from replied text message ${repliedToMessage.message_id}`);
-                        messageIdToReply = repliedToMessage.message_id; // Balas ke pesan asli yang direply user
-                    }
-
+                         // Format ulang promptForAI yang sudah ada (dari trigger chat)
+                         promptForAI = `Berikut adalah pesan dari ${originalSenderName}: "${repliedText}"\n\nTanggapi pesan tersebut dengan memperhatikan pertanyaan/pernyataan saya berikut: "${promptForAI}"`;
+                         console.log(`Added context from replied text message ${repliedToMessage.message_id}`);
+                         messageIdToReply = repliedToMessage.message_id; // Balas ke pesan asli
+                     }
 
                     // --- Tentukan apakah akan proses AI (Teks Biasa Grup) ---
-                    if (triggerWordUsed && promptForAI) {
+                    if (textTriggerFound && promptForAI) {
                         shouldProcessAI = true;
-                        enableGrounding = false; // Default off untuk chat biasa grup
+                        enableGrounding = false; // Default off
                         console.log(`Trigger TEXT '${triggerWordUsed}' activated (no grounding) for message ${messageId} in group ${chatId} by ${nameForAIContext} (${userId})`);
-                    } else if (triggerWordUsed && !promptForAI && triggerWordUsed !== 'reply_to_bot_text') {
+                    } else if (textTriggerFound && !promptForAI && triggerWordUsed !== 'reply_to_bot_text') { // Trigger ada tapi prompt kosong
                         let helpText = `Iya ${nameForBotGreeting}? Mau ${triggerWordUsed} apa nih? Contoh: ${triggerWordUsed} jelaskan soal black hole`;
                         await sendMessage(chatId, helpText, messageIdToReply);
                         shouldProcessAI = false;
-                    } else if (!triggerWordUsed && messageText) { // Hanya log jika ada teks tapi bukan trigger
-                        console.log(`Ignoring non-trigger text message ${messageId} in group chat ${chatId} from ${nameForAIContext} (${userId})`);
-                        shouldProcessAI = false;
-                    }
+                    } else if (!textTriggerFound && messageText) { // Ada teks tapi BUKAN trigger dan BUKAN reply ke gambar yg valid
+                         // Jangan log jika ini reply ke gambar yg tidak valid (sudah di log sebelumnya)
+                         if (!(repliedToMessage && repliedToMessage.photo)) {
+                            console.log(`Ignoring non-trigger text message ${messageId} in group chat ${chatId} from ${nameForAIContext} (${userId})`);
+                         }
+                         shouldProcessAI = false;
+                     }
                 }
-                 else if (!messageText && !repliedToMessage?.photo) { // Abaikan jika pesan teks kosong DAN BUKAN reply ke foto
+                // (Bagian else untuk chat type tidak didukung, dll)
+                 else if (!messageText && !repliedToMessage?.photo) { // Abaikan pesan kosong
                     console.log(`Ignoring message ${messageId} in chat ${chatId} because it has no text content and is not a reply to a photo.`);
                     shouldProcessAI = false;
                 }
-                else {
-                    console.log(`Ignoring message from unsupported chat type: ${chatType} or unhandled condition.`);
+                 else { // Kondisi lain yang tidak ditangani
+                     if (!(repliedToMessage && repliedToMessage.photo)) { // Jangan log ganda jika sudah diabaikan oleh logic vision
+                        console.log(`Ignoring message from unsupported chat type: ${chatType} or unhandled condition.`);
+                     }
                     shouldProcessAI = false;
                 }
-            }
-        }
+            } // Akhir cek kondisi non-grounding
+        } // Akhir cek jika BUKAN Trigger Vision
 
 
         // --- 4. Proses AI jika diperlukan ---
         if (shouldProcessAI) {
-             const effectivePromptLength = (promptForAI || "").length + (imageBase64 ? imageBase64.length : 0); // Perkiraan kasar
-             const MAX_EFFECTIVE_PROMPT = 4194304; // Batas lebih besar untuk vision/history
+             // ... (Kode untuk cek panjang prompt dan memanggil getGeminiResponse tetap sama) ...
+             // Pastikan MAX_EFFECTIVE_PROMPT sudah dinaikkan (misal 4MB = 4194304)
+             const effectivePromptLength = (promptForAI || "").length + (imageBase64 ? imageBase64.length : 0);
+             const MAX_EFFECTIVE_PROMPT = 4194304; // Contoh 4MB
 
-            if (effectivePromptLength > MAX_EFFECTIVE_PROMPT) {
-                await sendMessage(chatId, `pencet /clear`, messageIdToReply);
-            } else if (!promptForAI && !imageBase64) {
-                 // Kondisi aneh, seharusnya tidak terjadi jika shouldProcessAI=true
-                 console.warn(`shouldProcessAI is true but both prompt and image are missing for chat ${chatId}, message ${messageId}. Skipping.`);
-            }
-             else {
-                // Kirim 'typing' action JIKA BELUM dikirim (misal untuk request teks)
-                if (!imageBase64) { // Jika request vision, typing sudah dikirim saat fetch gambar
-                    try {
-                        await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'typing' });
-                    } catch (actionError) { console.warn("Could not send typing action:", actionError.message); }
-                }
+             console.log(`Effective prompt/image size: ${effectivePromptLength} bytes (Limit: ${MAX_EFFECTIVE_PROMPT})`);
 
-                // Panggil Gemini (sudah menghandle vision/text/grounding secara internal)
-                const aiResponseObject = await getGeminiResponse(
-                    chatId,
-                    promptForAI,
-                    nameForAIContext,
-                    enableGrounding, // Akan dinonaktifkan otomatis di dalam jika ada gambar
-                    imageBase64,     // Kirim data gambar
-                    imageMimeType    // Kirim tipe mime
-                );
+             if (effectivePromptLength > MAX_EFFECTIVE_PROMPT) {
+                 await sendMessage(chatId, `Waduh ${nameForBotGreeting}, permintaannya (${triggerWordUsed}) terlalu besar nih (prompt/gambar > ${(MAX_EFFECTIVE_PROMPT / 1024 / 1024).toFixed(1)} MB). Coba dipersingkat atau pakai gambar lebih kecil ya.`, messageIdToReply);
+             } else if (!promptForAI && !imageBase64) {
+                  console.warn(`shouldProcessAI is true but both prompt and image are missing for chat ${chatId}, message ${messageId}. Skipping.`);
+             } else {
+                 // Kirim 'typing' JIKA BELUM (yaitu jika bukan request vision yg sudah kirim typing saat fetch)
+                 if (!imageBase64) {
+                     try {
+                         await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'typing' });
+                     } catch (actionError) { console.warn("Could not send typing action:", actionError.message); }
+                 }
 
-                // Kirim balasan AI
-                await sendMessage(chatId, aiResponseObject.text, messageIdToReply); // Balas ke pesan trigger atau pesan yg direply (tergantung logic di atas)
-            }
-        }
+                 const aiResponseObject = await getGeminiResponse(
+                     chatId,
+                     promptForAI,
+                     nameForAIContext,
+                     enableGrounding,
+                     imageBase64,
+                     imageMimeType
+                 );
+
+                 await sendMessage(chatId, aiResponseObject.text, messageIdToReply);
+             }
+        } // --- Akhir Proses AI ---
 
     } else if (update.message && update.message.chat) {
+        // ... (Handle pesan non-teks/incomplete) ...
         const chatId = update.message.chat.id;
         console.log(`Ignoring non-text or incomplete message update in chat ${chatId || 'unknown'}`);
     } else {
+        // ... (Handle update bukan message) ...
         console.log('Ignoring update that is not a message or lacks required fields.');
     }
 
