@@ -577,7 +577,7 @@ module.exports = async (req, res) => {
         const chatTriggers = ['/chat ', 'lele ', 'le ', 'tanya '];
         const groundingTriggers = ['/info ', 'inpo ', 'kabar ', '/po '];
         // --- >>> Trigger Image Generation <<< ---
-        const imageTriggers = ['/img ', 'gambar '];
+        const imageTriggers = ['/img ', 'img ', 'buat ', 'gambar '];
 
         // --- 0. Cek Trigger Image Generation DULU ---
         let imageTriggerFound = false;
@@ -829,8 +829,7 @@ module.exports = async (req, res) => {
 
             if (imageResult.base64Data && imageResult.mimeType) {
                 // Sukses! Kirim gambar
-                const caption = `Ini gambarnya, ${nameForBotGreeting}!\nDiminta oleh: ${nameForAIContext}\nPrompt: ${promptForAI.substring(0, 200)}${promptForAI.length > 200 ? '...' : ''}` +
-                                (imageResult.textFallback ? `\n\n${imageResult.textFallback}` : ''); // Tambahkan text fallback jika ada
+                const caption = `📷`;
                 await sendPhotoFromBase64(chatId, imageResult.base64Data, imageResult.mimeType, caption, messageIdToReply);
             } else {
                 // Gagal, kirim pesan error dari fungsi generateImageWithGemini
