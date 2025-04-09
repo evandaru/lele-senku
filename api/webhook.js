@@ -122,7 +122,7 @@ function stripMarkdown(text) {
     for (let i = 0; i < originalLines.length; i++) {
         const line = originalLines[i];
         let processedLine = line;
-        let addCheckMark = false; // Tandai apakah perlu menambah "✔"
+        let addCheckMark = false; // Tandai apakah perlu menambah "✅"
 
         // 1. Lewati garis horizontal
         if (hrRegex.test(line)) {
@@ -151,14 +151,14 @@ function stripMarkdown(text) {
             let content = listItemMatch[2];
             // Strip lagi markup inline dari *konten* saja (jika ada sisa)
             content = content.replace(/[*_`[\]()]/g, '').replace(/\bhttps?:\/\/\S+/gi, '');
-            processedLine = indent + '✔ ' + content.trim(); // Ganti marker dengan ✔
-            addCheckMark = false; // ✔ sudah ditambahkan
+            processedLine = indent + '✅ ' + content.trim(); // Ganti marker dengan ✅
+            addCheckMark = false; // ✅ sudah ditambahkan
         }
         // Cek apakah ini header kategori: tidak inden, diakhiri ':', dan diikuti item list
         else if (categoryHeaderMatch && !startsWithWhitespaceRegex.test(categoryHeaderMatch[1]) && nextLine && listItemRegex.test(nextLine)) {
              // Ini kemungkinan header kategori list
              processedLine = processedLine.trim(); // Hapus spasi ekstra
-             addCheckMark = true; // Tambahkan ✔ di depan
+             addCheckMark = true; // Tambahkan ✅ di depan
         }
         else {
             // Ini baris biasa atau header yang bukan kategori list
@@ -166,9 +166,9 @@ function stripMarkdown(text) {
             addCheckMark = false;
         }
 
-        // Tambahkan ✔ jika diperlukan dan belum ditambahkan
+        // Tambahkan ✅ jika diperlukan dan belum ditambahkan
         if (addCheckMark && processedLine) {
-             processedLine = '✔ ' + processedLine;
+             processedLine = '✅ ' + processedLine;
         }
 
         // Hanya tambahkan baris jika tidak kosong setelah diproses
@@ -186,7 +186,7 @@ function stripMarkdown(text) {
 
     // Pembersihan akhir
     resultText = resultText.replace(/ +/g, ' '); // Ganti spasi ganda -> spasi tunggal
-    resultText = resultText.replace(/✔(\S)/g, '✔ $1'); // Pastikan ada spasi setelah ✔
+    resultText = resultText.replace(/✅(\S)/g, '✅ $1'); // Pastikan ada spasi setelah ✅
     resultText = resultText.replace(/\n\s*\n/g, '\n\n'); // Normalisasi baris kosong ganda (untuk paragraf)
     resultText = resultText.replace(/\n{3,}/g, '\n\n'); // Batasi maksimal 2 baris baru berturutan
 
