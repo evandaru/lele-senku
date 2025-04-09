@@ -353,7 +353,8 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
 // --- Akhir Fungsi Gemini ---
 
 // --- Fungsi BARU: generateImageWithGemini ---
-async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
+// (Tambahkan inputImageBase64 dan inputImageMimeType sebagai parameter)
+async function generateImageWithGemini(chatId, prompt, userName = 'mas', inputImageBase64 = null, inputImageMimeType = null) {
     if (!GEMINI_API_KEY) {
         console.error("Gemini API key is not set for image generation.");
         return { error: `Maaf ${userName}, konfigurasi AI untuk gambar belum diatur.` };
@@ -362,24 +363,47 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
         console.error("Gemini Image Model Name is not set.");
         return { error: `Maaf ${userName}, model AI untuk gambar belum ditentukan.` };
     }
-     if (!prompt || prompt.trim().length === 0) {
-        console.log(`Image generation skipped for chat ${chatId} due to empty prompt.`);
-        return { error: `Mau gambar apa, ${userName}? Kasih tau dong. Contoh: /img kucing astronot` };
+    if (!prompt || prompt.trim().length === 0) {
+        console.log(`Image generation/editing skipped for chat ${chatId} due to empty prompt.`);
+        const action = inputImageBase64 ? 'diedit jadi apa' : 'digambar apa';
+        const exampleAction = inputImageBase64 ? 'edit tambahkan kacamata hitam' : 'img kucing astronot';
+        return { error: `Mau ${action}, ${userName}? Kasih tau dong. Contoh: /${exampleAction}` };
     }
 
     const modelToUse = GEMINI_IMAGE_MODEL_NAME;
     const apiUrl = `${GEMINI_API_URL_BASE}${modelToUse}:generateContent?key=${GEMINI_API_KEY}`;
 
-    console.log(`Calling Gemini Image API (${modelToUse}) for chat ${chatId}. User: ${userName}. Prompt: "${prompt}"`);
+    const isEditing = inputImageBase64 && inputImageMimeType;
+    const logAction = isEditing ? "Editing" : "Generating";
+
+    console.log(`Calling Gemini Image API (${modelToUse}) for chat ${chatId}. User: ${userName}. Action: ${logAction}. Prompt: "${prompt}"`);
+
+    // --- MODIFIKASI BAGIAN INI ---
+    const requestContents = [];
+    // Selalu tambahkan prompt teks terlebih dahulu
+    requestContents.push({ text: prompt });
+
+    // Jika ini adalah permintaan edit, tambahkan data gambar input
+    if (isEditing) {
+        requestContents.push({
+            inlineData: {
+                mimeType: inputImageMimeType,
+                data: inputImageBase64
+            }
+        });
+        console.log(`Input image provided for editing (MimeType: ${inputImageMimeType})`);
+    }
+    // --- AKHIR MODIFIKASI ---
 
     const requestBody = {
-        contents: [{
-            role: "user",
-            parts: [{ text: prompt }]
-        }],
+        // --- MODIFIKASI BAGIAN INI ---
+        // Gunakan struktur 'contents' yang sudah dibuat
+        contents: requestContents,
+        // --- AKHIR MODIFIKASI ---
         generationConfig: {
-            responseModalities: ["TEXT", "IMAGE"],
+            responseModalities: ["TEXT", "IMAGE"], // Pastikan ini ada
             temperature: 0.7,
+            // responseMimeType: "image/png" // Opsional, jika ingin memaksakan output PNG
         },
         // safetySettings: [...] // Safety settings example, actual values depend on needs
     };
@@ -387,93 +411,96 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
     try {
         const response = await axios.post(apiUrl, requestBody, {
             headers: { 'Content-Type': 'application/json' },
-            timeout: 180000
+            timeout: 180000 // Mungkin perlu timeout lebih lama untuk edit+generate
         });
 
         const candidate = response.data?.candidates?.[0];
 
         if (!candidate) {
-             console.error(`Gemini Image response missing candidates for chat ${chatId}.`, JSON.stringify(response.data, null, 2));
-             return { error: `Waduh ${userName}, AI nggak ngasih hasil gambar nih. Coba lagi ya.` };
+             console.error(`Gemini Image response missing candidates for chat ${chatId}. Action: ${logAction}.`, JSON.stringify(response.data, null, 2));
+             return { error: `Waduh ${userName}, AI nggak ngasih hasil gambar (${logAction}) nih. Coba lagi ya.` };
         }
 
         if (candidate.finishReason && candidate.finishReason !== 'STOP') {
-            console.warn(`Gemini Image response for chat ${chatId} finished with reason: ${candidate.finishReason}. Checking for partial content.`);
+            console.warn(`Gemini Image response for chat ${chatId} (Action: ${logAction}) finished with reason: ${candidate.finishReason}. Checking for partial content.`);
             const imagePart = candidate.content?.parts?.find(part => part.inlineData);
             if (imagePart?.inlineData?.data) {
                  console.log(`Image found despite finish reason ${candidate.finishReason} for chat ${chatId}. Proceeding.`);
                  return {
                      base64Data: imagePart.inlineData.data,
-                     mimeType: imagePart.inlineData.mimeType,
-                     textFallback: `(Gambar berhasil dibuat, tapi ada peringatan: ${candidate.finishReason})`
+                     mimeType: imagePart.inlineData.mimeType || 'image/png', // Default ke png jika tidak ada
+                     textFallback: `(Gambar berhasil ${isEditing ? 'diedit' : 'dibuat'}, tapi ada peringatan: ${candidate.finishReason})`
                  };
             } else {
-                 console.error(`Gemini Image generation blocked for chat ${chatId}. Reason: ${candidate.finishReason}`);
+                 console.error(`Gemini Image ${logAction} blocked for chat ${chatId}. Reason: ${candidate.finishReason}`);
                  const safetyRatings = candidate.safetyRatings ? ` (${candidate.safetyRatings.map(r => r.category + ':'+r.probability).join(', ')})` : '';
-                 return { error: `Waduh ${userName}, gambar mu sus ;-;, generate yang lainnya` };
+                 // Pesan error sedikit disesuaikan untuk edit vs generate
+                 const errorReason = isEditing ? "diedit karena kontennya mungkin tidak aman" : "dibuat karena kontennya mungkin tidak aman";
+                 return { error: `Waduh ${userName}, gambarnya nggak bisa ${errorReason}. Coba instruksi/prompt yang berbeda ya.${safetyRatings}` };
             }
         }
 
         const imagePart = candidate.content?.parts?.find(part => part.inlineData);
 
         if (imagePart?.inlineData?.data && imagePart?.inlineData?.mimeType) {
-            console.log(`Image successfully generated for chat ${chatId}. MimeType: ${imagePart.inlineData.mimeType}`);
+            console.log(`Image successfully ${isEditing ? 'edited' : 'generated'} for chat ${chatId}. MimeType: ${imagePart.inlineData.mimeType}`);
             const textPart = candidate.content?.parts?.find(part => part.text);
             const textFallback = textPart ? stripMarkdown(textPart.text) : null;
 
             return {
                 base64Data: imagePart.inlineData.data,
                 mimeType: imagePart.inlineData.mimeType,
-                textFallback: textFallback
+                textFallback: textFallback // Teks tambahan jika ada
             };
         } else {
              const textPart = candidate.content?.parts?.find(part => part.text);
              if (textPart?.text) {
-                 console.warn(`Gemini Image API (${modelToUse}) returned text instead of image for chat ${chatId}: "${textPart.text.substring(0,100)}..."`);
-                 return { error: `Hmm ${userName}, Gambar mu sus coba ganti prompt` };
+                 console.warn(`Gemini Image API (${modelToUse}) returned text instead of image for chat ${chatId} (Action: ${logAction}): "${textPart.text.substring(0,100)}..."`);
+                 // Beri pesan yang lebih relevan jika sedang mengedit
+                 const errorReason = isEditing ? "hasil editnya malah teks, bukan gambar" : "malah ngasih teks, bukan gambar";
+                 return { error: `Hmm ${userName}, AI-nya ${errorReason}. Mungkin instruksinya kurang jelas atau ada batasan lain?\n\n${stripMarkdown(textPart.text)}` };
              } else {
-                console.error(`Gemini Image response format unexpected or missing image data for chat ${chatId}.`, JSON.stringify(response.data, null, 2));
-                return { error: `Waduh ${userName}, gambar mu sus ;-;` };
+                console.error(`Gemini Image response format unexpected or missing image data for chat ${chatId} (Action: ${logAction}).`, JSON.stringify(response.data, null, 2));
+                return { error: `Waduh ${userName}, ada error pas ${isEditing ? 'ngedit' : 'bikin'} gambarnya (data nggak lengkap). Coba lagi.` };
              }
         }
 
     } catch (error) {
-        console.error(`Error calling Gemini Image API (${modelToUse}) for chat ${chatId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas bikin gambar pake AI. Coba lagi nanti ya.`;
-        if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI bikin gambarnya, coba lagi aja`; }
-        else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan minta gambar nih kayaknya pake , coba santai dulu bentar`; }
+        // Error handling disamakan saja, sudah cukup generik
+        console.error(`Error calling Gemini Image API (${modelToUse}) for chat ${chatId} (Action: ${logAction}):`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas ${isEditing ? 'ngedit' : 'bikin'} gambar pake AI. Coba lagi nanti ya.`;
+        // ... (sisa error handling sama seperti sebelumnya) ...
+         if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI ${isEditing ? 'ngedit' : 'bikin'} gambarnya, coba lagi aja`; }
+        else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan minta ${isEditing ? 'edit' : 'gambar'} nih kayaknya, coba santai dulu bentar`; }
         else if (error.response?.data?.error) {
             const apiError = error.response.data.error;
-            errorMsg = `Error dari AI Gambar - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
+            errorMsg = `Error dari AI Gambar (${logAction}) - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
              if (apiError.message && apiError.message.includes("API key not valid")) {
                  errorMsg = `Waduh ${userName}, API Key Gemini sepertinya salah atau belum diatur nih. Cek konfigurasi ya.`;
             } else if (apiError.message && apiError.message.includes("quota")) {
-                 errorMsg = `Aduh ${userName}, jatah bikin gambar habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
+                 errorMsg = `Aduh ${userName}, jatah ${isEditing ? 'edit' : 'bikin'} gambar habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
             } else if (apiError.message && apiError.message.includes("Request payload size")) {
-                 errorMsg = `Waduh ${userName}, prompt gambarnya kepanjangan. Coba dipersingkat.`;
+                 errorMsg = `Waduh ${userName}, instruksi ${isEditing ? 'edit' : 'buat'} gambarnya kepanjangan/gambar inputnya terlalu besar. Coba dipersingkat atau pakai gambar lebih kecil.`;
             } else if (apiError.message && apiError.message.includes("response modalities")) {
-                 errorMsg = `Waduh ${userName}, model AI ini sepertinya nggak bisa generate gambar/teks sesuai permintaan. Mungkin modelnya salah? (${apiError.message})`;
-            } else if (apiError.message && apiError.message.includes("SAFETY")) {
-                errorMsg = `Maaf ${userName}, gambarmu sus ;-; Coba prompt yang lebih aman ya. (${apiError.message})`;
+                 errorMsg = `Waduh ${userName}, model AI ini sepertinya nggak bisa ${isEditing ? 'edit' : 'generate'} gambar/teks sesuai permintaan. Mungkin modelnya salah? (${apiError.message})`;
+            } else if (apiError.message && (apiError.message.includes("SAFETY") || apiError.message.includes("prompt was blocked"))) {
+                errorMsg = `Maaf ${userName}, ${isEditing ? 'editan' : 'gambar'}mu ditolak karena alasan keamanan/konten. Coba instruksi/prompt yang lebih aman ya.`;
+            } else if (apiError.message && apiError.message.includes("inline data")) {
+                 errorMsg = `Waduh ${userName}, sepertinya ada masalah pas ngirim data gambar input ke AI untuk diedit. Ukuran atau formatnya mungkin? (${apiError.message})`;
             }
         } else if (error.response && error.response.status >= 500) {
-             errorMsg = `Aduh ${userName}, kayaknya server lagi ada masalah internal nih. Coba beberapa saat lagi.`;
+             errorMsg = `Aduh ${userName}, kayaknya server AI (${logAction}) lagi ada masalah internal nih. Coba beberapa saat lagi.`;
         }
         return { error: errorMsg };
     }
 }
 // --- Akhir Fungsi generateImageWithGemini ---
+// --- Akhir Fungsi generateImageWithGemini ---
 
 // --- Handler Utama Vercel ---
+// --- Handler Utama Vercel ---
 module.exports = async (req, res) => {
-    if (req.method !== 'POST') { return res.status(405).json({ error: 'Method Not Allowed' }); }
-    if (!req.body || typeof req.body !== 'object') {
-        console.log('Received invalid or empty request body.');
-        return res.status(200).send('OK - Invalid body');
-    }
-
-    console.log('Received update:', JSON.stringify(req.body, null, 2));
-    const update = req.body;
+    // ... (kode awal handler sama) ...
 
     if (update.message && update.message.chat && update.message.from) {
         const chatId = update.message.chat.id;
@@ -492,12 +519,15 @@ module.exports = async (req, res) => {
 
         let shouldProcessAI = false;
         let shouldGenerateImage = false;
+        let shouldEditImage = false; // <-- TAMBAHKAN STATE INI
         let promptForAI = "";
         let messageIdToReply = messageId;
         let enableGrounding = false;
         let triggerWordUsed = null;
         let imageBase64 = null;
         let imageMimeType = null;
+        let inputImageBase64 = null; // <-- TAMBAHKAN INI UNTUK EDIT
+        let inputImageMimeType = null;// <-- TAMBAHKAN INI UNTUK EDIT
 
         const lowerCaseText = messageText.toLowerCase();
         const BOT_USER_ID = BOT_TOKEN ? parseInt(BOT_TOKEN.split(':')[0], 10) : null;
@@ -505,217 +535,183 @@ module.exports = async (req, res) => {
         const chatTriggers = ['/chat ', 'lele ', 'le ', 'tanya '];
         const groundingTriggers = ['/info ', 'inpo ', 'kabar ', '/po '];
         const imageTriggers = ['/img ', 'img ', 'buat ', 'gambar '];
+        const editTriggers = ['/edit ', 'edit ']; // <-- TAMBAHKAN TRIGGER EDIT
 
-        let imageTriggerFound = false;
-        for (const trigger of imageTriggers) {
-            if (lowerCaseText.startsWith(trigger)) {
-                triggerWordUsed = trigger.trim();
-                promptForAI = messageText.substring(trigger.length).trim();
-                if (promptForAI) {
-                    shouldGenerateImage = true;
-                    console.log(`Processing IMAGE generation request (Trigger: '${triggerWordUsed}') from ${nameForAIContext} (${userId})`);
-                } else {
-                    await sendMessage(chatId, `Mau ${triggerWordUsed} apa, ${nameForBotGreeting}? Kasih tau dong. Contoh: ${triggerWordUsed} pemandangan senja di pantai`, messageIdToReply);
-                    shouldGenerateImage = false;
-                }
-                imageTriggerFound = true;
-                break;
-            }
-        }
-
-        if (!shouldGenerateImage) {
-
-            if (lowerCaseText === '/clear') {
-                if (chatHistories[chatId]) {
-                    delete chatHistories[chatId];
-                    await sendMessage(chatId, `Oke ${nameForBotGreeting}, history obrolan sudah dibersihkan!`, messageIdToReply);
-                    console.log(`History cleared for chat ${chatId} by ${nameForAIContext} (${userId})`);
-                } else {
-                    await sendMessage(chatId, `Hmm ${nameForBotGreeting}, belum ada history buat dihapus.`, messageIdToReply);
-                }
-                return res.status(200).send('OK');
-            }
-
-            if (repliedToMessage?.photo?.length > 0 && messageText) {
-                console.log(`Detected reply to photo by ${nameForAIContext} (${userId}). Checking text trigger...`);
-                let visionTriggerFound = false;
-                for (const trigger of chatTriggers) {
-                    if (lowerCaseText.startsWith(trigger)) {
-                        visionTriggerFound = true;
-                        triggerWordUsed = `vision_${trigger.trim()}`;
-                        promptForAI = messageText.substring(trigger.length).trim();
-                        console.log(`Vision trigger '${trigger.trim()}' found in reply text.`);
-
+        // --- TAMBAHAN: Logika Deteksi Edit Gambar ---
+        if (repliedToMessage?.photo?.length > 0) {
+            console.log(`Detected reply to photo message ${repliedToMessage.message_id} by ${nameForAIContext} (${userId}). Checking edit/vision triggers...`);
+            let editTriggerFound = false;
+            for (const trigger of editTriggers) {
+                if (lowerCaseText.startsWith(trigger)) {
+                    triggerWordUsed = trigger.trim();
+                    promptForAI = messageText.substring(trigger.length).trim();
+                    if (promptForAI) {
+                        console.log(`Processing IMAGE EDIT request (Trigger: '${triggerWordUsed}') for photo ${repliedToMessage.message_id} from ${nameForAIContext} (${userId})`);
                         try {
-                            await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'typing' });
-                            const photo = repliedToMessage.photo[repliedToMessage.photo.length - 1];
+                            // Kirim aksi 'upload_photo' karena outputnya foto
+                            await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'upload_photo' });
+
+                            // Ambil data gambar dari pesan yang dibalas (logika sama seperti vision)
+                            const photo = repliedToMessage.photo[repliedToMessage.photo.length - 1]; // Ambil resolusi tertinggi
                             const fileId = photo.file_id;
-                            console.log(`Getting file path for file_id: ${fileId}`);
+                            console.log(`Getting file path for input image file_id: ${fileId}`);
                             const getFileResponse = await axios.get(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
                             const filePath = getFileResponse.data?.result?.file_path;
-                            if (!filePath) { throw new Error('File path not found.'); }
-                            console.log(`Got file path: ${filePath}`);
+                            if (!filePath) { throw new Error('Input image file path not found.'); }
+                            console.log(`Got input image file path: ${filePath}`);
                             const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-                            console.log(`Downloading image from: ${fileUrl}`);
-                            const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-                            imageBase64 = Buffer.from(imageResponse.data).toString('base64');
-                            if (filePath.toLowerCase().endsWith('.png')) { imageMimeType = 'image/png'; }
-                            else if (filePath.toLowerCase().endsWith('.webp')) { imageMimeType = 'image/webp'; }
-                            else { imageMimeType = 'image/jpeg'; }
-                            console.log(`Image downloaded (${(imageBase64.length * 3/4 / 1024).toFixed(2)} KB) and encoded. MimeType: ${imageMimeType}`);
-                            shouldProcessAI = true;
-                            enableGrounding = false;
+                            console.log(`Downloading input image from: ${fileUrl}`);
+                            const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer', timeout: 30000 }); // Timeout download
+                            inputImageBase64 = Buffer.from(imageResponse.data).toString('base64'); // Simpan ke variabel input
+
+                            // Tentukan MimeType (logika sama seperti vision)
+                            if (filePath.toLowerCase().endsWith('.png')) { inputImageMimeType = 'image/png'; }
+                            else if (filePath.toLowerCase().endsWith('.webp')) { inputImageMimeType = 'image/webp'; }
+                            // Tambahkan tipe lain jika perlu (gif, bmp tidak didukung Gemini setahu saya)
+                            // else if (filePath.toLowerCase().endsWith('.gif')) { inputImageMimeType = 'image/gif'; }
+                            else { inputImageMimeType = 'image/jpeg'; } // Default ke JPEG
+
+                            console.log(`Input image downloaded (${(inputImageBase64.length * 3/4 / 1024).toFixed(2)} KB) and encoded. MimeType: ${inputImageMimeType}`);
+                            shouldEditImage = true; // <-- Set state edit
+                            messageIdToReply = messageId; // Balas ke pesan trigger edit
+
                         } catch (error) {
-                            console.error(`Error fetching/processing image for vision request (file_id: ${fileId}):`, error.message);
-                            await sendMessage(chatId, `Waduh ${nameForBotGreeting}, gagal ngambil/proses gambarnya nih. Coba lagi ya.`, messageId);
-                            shouldProcessAI = false;
-                            visionTriggerFound = false;
+                            console.error(`Error fetching/processing input image for edit request (file_id: ${fileId}):`, error.message);
+                            await sendMessage(chatId, `Waduh ${nameForBotGreeting}, gagal ngambil gambar yang mau diedit nih. Coba lagi ya. Error: ${error.message}`, messageId);
+                            shouldEditImage = false; // Gagal, jangan proses edit
                         }
-                        break;
+                    } else {
+                        await sendMessage(chatId, `Mau diedit jadi apa, ${nameForBotGreeting}? Kasih instruksinya dong. Contoh: ${trigger} tambahkan topi santa`, messageId);
+                        shouldEditImage = false; // Prompt kosong, jangan proses
                     }
-                }
-                if (!visionTriggerFound && messageText) {
-                    console.log(`Ignoring reply to photo from ${nameForAIContext} (${userId}) because text does not start with a valid chat trigger.`);
+                    editTriggerFound = true;
+                    break; // Hentikan loop jika trigger edit ditemukan
                 }
             }
 
+            // Jika BUKAN trigger edit, baru cek trigger vision (chat/lele/dll)
+            if (!editTriggerFound && messageText) {
+                 let visionTriggerFound = false;
+                 for (const trigger of chatTriggers) {
+                     if (lowerCaseText.startsWith(trigger)) {
+                         visionTriggerFound = true;
+                         triggerWordUsed = `vision_${trigger.trim()}`;
+                         promptForAI = messageText.substring(trigger.length).trim();
+                         console.log(`Vision trigger '${trigger.trim()}' found in reply text to photo.`);
 
-            if (!shouldProcessAI) {
+                         // Logika ambil gambar untuk VISION (pakai variabel imageBase64 biasa)
+                         try {
+                             await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'typing' });
+                             const photo = repliedToMessage.photo[repliedToMessage.photo.length - 1];
+                             const fileId = photo.file_id;
+                             console.log(`Getting file path for vision file_id: ${fileId}`);
+                             const getFileResponse = await axios.get(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
+                             const filePath = getFileResponse.data?.result?.file_path;
+                             if (!filePath) { throw new Error('File path not found.'); }
+                             console.log(`Got file path: ${filePath}`);
+                             const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+                             console.log(`Downloading image for vision from: ${fileUrl}`);
+                             const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+                             imageBase64 = Buffer.from(imageResponse.data).toString('base64'); // Pakai variabel imageBase64
+                             if (filePath.toLowerCase().endsWith('.png')) { imageMimeType = 'image/png'; }
+                             else if (filePath.toLowerCase().endsWith('.webp')) { imageMimeType = 'image/webp'; }
+                             else { imageMimeType = 'image/jpeg'; }
+                             console.log(`Image downloaded for vision (${(imageBase64.length * 3/4 / 1024).toFixed(2)} KB) and encoded. MimeType: ${imageMimeType}`);
+                             shouldProcessAI = true; // Set state proses AI (vision)
+                             enableGrounding = false;
+                         } catch (error) {
+                             console.error(`Error fetching/processing image for vision request (file_id: ${fileId}):`, error.message);
+                             await sendMessage(chatId, `Waduh ${nameForBotGreeting}, gagal ngambil/proses gambarnya nih. Coba lagi ya.`, messageId);
+                             shouldProcessAI = false;
+                         }
+                         break; // Hentikan loop chat trigger
+                     }
+                 }
+                 if (!visionTriggerFound && !editTriggerFound && messageText) { // Hanya log jika bukan trigger edit atau vision
+                     console.log(`Ignoring reply to photo from ${nameForAIContext} (${userId}) because text does not start with a valid edit or chat trigger.`);
+                 }
+            }
+        }
+        // --- AKHIR TAMBAHAN LOGIKA EDIT ---
+
+        // Lanjutkan ke pengecekan trigger lain HANYA JIKA BUKAN EDIT ATAU VISION DARI REPLY FOTO
+        if (!shouldEditImage && !shouldProcessAI) {
+            // Cek trigger image generation (/img, img, dll)
+            let imageTriggerFound = false;
+            for (const trigger of imageTriggers) {
+                if (lowerCaseText.startsWith(trigger)) {
+                    triggerWordUsed = trigger.trim();
+                    promptForAI = messageText.substring(trigger.length).trim();
+                    if (promptForAI) {
+                        shouldGenerateImage = true;
+                        console.log(`Processing IMAGE generation request (Trigger: '${triggerWordUsed}') from ${nameForAIContext} (${userId})`);
+                    } else {
+                        await sendMessage(chatId, `Mau ${triggerWordUsed} apa, ${nameForBotGreeting}? Kasih tau dong. Contoh: ${triggerWordUsed} pemandangan senja di pantai`, messageIdToReply);
+                        shouldGenerateImage = false;
+                    }
+                    imageTriggerFound = true;
+                    break;
+                }
+            }
+
+            // Jika bukan image generation, baru cek trigger text/grounding/dll
+            if (!shouldGenerateImage) {
+                // --- SEMUA KODE DARI pengecekan grounding, private chat, reply ke bot, dll PINDAHKAN KE DALAM BLOK INI ---
+                // Contoh awal:
                 enableGrounding = false;
                 let groundingTriggerFound = false;
                 for (const trigger of groundingTriggers) {
-                    if (lowerCaseText.startsWith(trigger)) {
-                        triggerWordUsed = trigger.trim();
-                        promptForAI = messageText.substring(trigger.length).trim();
-                        if (promptForAI) {
-                            shouldProcessAI = true;
-                            enableGrounding = true;
-                            groundingTriggerFound = true;
-                            console.log(`Processing TEXT message ${messageId} WITH grounding (Trigger: '${triggerWordUsed}') from ${nameForAIContext} (${userId})`);
-                        } else {
-                            await sendMessage(chatId, `Iya ${nameForBotGreeting}, mau cari ${triggerWordUsed} apa? Contoh: ${triggerWordUsed} berita terkini tentang AI`, messageIdToReply);
-                            shouldProcessAI = false;
-                        }
-                        break;
-                    }
+                     // ... (sisa kode pengecekan grounding) ...
                 }
 
-                if (!groundingTriggerFound && !shouldProcessAI) {
+                if (!groundingTriggerFound) {
                     if (chatType === 'private') {
-                         if (messageText) {
-                            shouldProcessAI = true;
-                            promptForAI = messageText;
-                            triggerWordUsed = 'private_chat';
-                            enableGrounding = false;
-                            if (lowerCaseText.startsWith("cari info ") || lowerCaseText.startsWith("inpo ")) {
-                                 const query = messageText.substring(messageText.indexOf(" ") + 1).trim();
-                                 if(query) {
-                                    promptForAI = query;
-                                    enableGrounding = true;
-                                    triggerWordUsed = 'private_grounding';
-                                    console.log(`Processing private message ${messageId} WITH grounding (Implicit trigger) from ${nameForAIContext} (${userId})`);
-                                 }
-                            } else {
-                                 console.log(`Processing private message ${messageId} (no grounding) from ${nameForAIContext} (${userId})`);
-                            }
-                        } else {
-                             console.log(`Ignoring empty private message ${messageId} from ${nameForAIContext} (${userId})`);
-                             shouldProcessAI = false;
-                        }
+                        // ... (sisa kode private chat) ...
                     } else if (chatType === 'group' || chatType === 'supergroup') {
-                        let textTriggerFound = false;
-                        if (messageText) {
-                             for (const trigger of chatTriggers) {
-                                if (lowerCaseText.startsWith(trigger)) {
-                                    triggerWordUsed = trigger.trim();
-                                    promptForAI = messageText.substring(trigger.length).trim();
-                                    textTriggerFound = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!textTriggerFound && BOT_USER_ID && repliedToMessage?.from?.id === BOT_USER_ID && repliedToMessage.text) {
-                              if (!repliedToMessage.photo) {
-                                   triggerWordUsed = 'reply_to_bot_text';
-                                   const botPreviousText = repliedToMessage.text;
-                                   const userReplyText = messageText;
-
-                                   let history = chatHistories[chatId] || [];
-                                   const lastBotTurnIndex = history.map(h => h.role).lastIndexOf('model');
-
-                                   if(lastBotTurnIndex !== -1 && history[lastBotTurnIndex].parts[0].text.includes(botPreviousText.substring(0, 50))) {
-                                        promptForAI = userReplyText;
-                                        console.log(`Continuing conversation based on reply to bot message ${repliedToMessage.message_id}`);
-                                   } else {
-                                        console.warn(`Could not find matching bot turn in history for reply ${repliedToMessage.message_id}. Creating manual context.`);
-                                        promptForAI = `Ini adalah respons saya sebelumnya: "${botPreviousText}"\n\nSekarang tanggapi ini dari ${nameForAIContext}: "${userReplyText}"`;
-                                        if(history.length > 2) {
-                                            const systemPrompts = history.filter(h => h.role === 'system');
-                                            chatHistories[chatId] = systemPrompts;
-                                            console.warn(`Resetting history for chat ${chatId} due to potential context mismatch.`);
-                                        }
-                                   }
-                                   textTriggerFound = true;
-                              }
-                         }
-
-                        if (textTriggerFound && triggerWordUsed !== 'reply_to_bot_text' && repliedToMessage && repliedToMessage.text && repliedToMessage.from?.id !== BOT_USER_ID) {
-                             const repliedText = repliedToMessage.text;
-                             let originalSenderName = 'seseorang';
-                              const repliedFrom = repliedToMessage.from;
-                              if (repliedFrom) {
-                                  const repliedUsername = repliedFrom.username ? repliedFrom.username.toLowerCase() : null;
-                                  const repliedNickname = repliedUsername ? userNicknames[repliedUsername] : null;
-                                 originalSenderName = repliedNickname || repliedFrom.first_name || (repliedFrom.username ? `@${repliedFrom.username}` : `User ${repliedFrom.id}`);
-                              }
-                             promptForAI = `Berikut adalah pesan dari ${originalSenderName}: "${repliedText}"\n\nTanggapi pesan tersebut dengan memperhatikan pertanyaan/pernyataan saya (${nameForAIContext}) berikut: "${promptForAI}"`;
-                             console.log(`Added context from replied text message ${repliedToMessage.message_id}`);
-                             messageIdToReply = repliedToMessage.message_id;
-                         }
-
-                        if (textTriggerFound && promptForAI) {
-                            shouldProcessAI = true;
-                            enableGrounding = false;
-                            console.log(`Trigger TEXT '${triggerWordUsed}' activated (no grounding) for message ${messageId} in group ${chatId} by ${nameForAIContext} (${userId})`);
-                        } else if (textTriggerFound && !promptForAI && triggerWordUsed !== 'reply_to_bot_text') {
-                            let helpText = `Iya ${nameForBotGreeting}? Mau ${triggerWordUsed} apa nih? Contoh: ${triggerWordUsed} jelaskan soal black hole`;
-                            await sendMessage(chatId, helpText, messageIdToReply);
-                            shouldProcessAI = false;
-                        } else if (!textTriggerFound && messageText) {
-                             if (!(repliedToMessage && repliedToMessage.photo)) {
-                                console.log(`Ignoring non-trigger text message ${messageId} in group chat ${chatId} from ${nameForAIContext} (${userId})`);
-                             }
-                             shouldProcessAI = false;
-                         }
+                        // ... (sisa kode grup, termasuk reply ke bot, reply ke user lain) ...
                     }
-                     else if (!messageText && !repliedToMessage?.photo) {
-                        console.log(`Ignoring message ${messageId} in chat ${chatId} because it has no text content and is not a reply to a photo.`);
-                        shouldProcessAI = false;
-                    }
-                     else {
-                         if (!(repliedToMessage && repliedToMessage.photo)) {
-                            console.log(`Ignoring message from unsupported chat type: ${chatType} or unhandled condition.`);
-                         }
-                        shouldProcessAI = false;
-                    }
+                    // ... (sisa kode else if/else untuk tipe chat lain atau kondisi tidak tertangani) ...
                 }
+                // --- AKHIR PEMINDAHAN KODE ---
             }
         }
 
 
-        if (shouldProcessAI) {
-             const effectivePromptLength = (promptForAI || "").length + (imageBase64 ? imageBase64.length : 0);
-             const MAX_EFFECTIVE_PROMPT = 4 * 1024 * 1024;
+        // --- MODIFIKASI BAGIAN EKSEKUSI ---
+        const effectivePromptLength = (promptForAI || "").length + (imageBase64 ? imageBase64.length : 0) + (inputImageBase64 ? inputImageBase64.length : 0); // Hitung juga input image
+        const MAX_EFFECTIVE_PROMPT = 4 * 1024 * 1024; // Batas sekitar 4MB untuk total input
 
-             console.log(`Effective TEXT/VISION prompt/image size: ${effectivePromptLength} bytes (Limit: ${MAX_EFFECTIVE_PROMPT})`);
+        console.log(`Effective prompt/image size: ${effectivePromptLength} bytes (Limit: ${MAX_EFFECTIVE_PROMPT})`);
 
-             if (effectivePromptLength > MAX_EFFECTIVE_PROMPT) {
-                 await sendMessage(chatId, `Waduh ${nameForBotGreeting}, permintaannya (${triggerWordUsed}) terlalu besar nih (prompt/gambar > ${(MAX_EFFECTIVE_PROMPT / 1024 / 1024).toFixed(1)} MB). Coba dipersingkat atau pakai gambar lebih kecil ya.`, messageIdToReply);
-             } else if (!promptForAI && !imageBase64) {
+        if (effectivePromptLength > MAX_EFFECTIVE_PROMPT) {
+             await sendMessage(chatId, `Waduh ${nameForBotGreeting}, permintaannya (${triggerWordUsed}) terlalu besar nih (prompt/gambar > ${(MAX_EFFECTIVE_PROMPT / 1024 / 1024).toFixed(1)} MB). Coba dipersingkat atau pakai gambar lebih kecil ya.`, messageIdToReply);
+        }
+        // --- Urutan Pengecekan Eksekusi ---
+        else if (shouldEditImage) { // <-- PROSES EDIT DULUAN
+            console.log(`Executing image edit for message ${messageId} triggered by ${triggerWordUsed}`);
+             // Aksi upload_photo sudah dikirim saat deteksi trigger
+
+             const imageResult = await generateImageWithGemini(
+                 chatId,
+                 promptForAI,
+                 nameForAIContext,
+                 inputImageBase64,      // <-- Kirim gambar input
+                 inputImageMimeType     // <-- Kirim mimeType gambar input
+             );
+
+             if (imageResult.base64Data && imageResult.mimeType) {
+                 const caption = `neh hasil editan mu pake ${triggerWordUsed} 🙏😭`; // Sesuaikan caption
+                 await sendPhotoFromBase64(chatId, imageResult.base64Data, imageResult.mimeType, caption, messageIdToReply);
+             } else {
+                 await sendMessage(chatId, imageResult.error || `Waduh ${nameForBotGreeting}, gagal ${triggerWordUsed} gambarnya nih, coba lagi nanti ya.`, messageIdToReply);
+             }
+        }
+        else if (shouldProcessAI) { // <-- PROSES VISION/TEXT KEMUDIAN
+             console.log(`Executing AI processing (Vision/Text/Grounding) for message ${messageId} triggered by ${triggerWordUsed}`);
+             if (!promptForAI && !imageBase64) {
                   console.warn(`shouldProcessAI is true but both prompt and image are missing for chat ${chatId}, message ${messageId}. Skipping.`);
              } else {
-                 if (!imageBase64) {
+                 if (!imageBase64) { // Hanya kirim typing jika bukan vision (karena vision sudah ada chat action)
                      try {
                          await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'typing' });
                      } catch (actionError) { console.warn("Could not send typing action:", actionError.message); }
@@ -726,36 +722,37 @@ module.exports = async (req, res) => {
                      promptForAI,
                      nameForAIContext,
                      enableGrounding,
-                     imageBase64,
-                     imageMimeType
+                     imageBase64,      // Ini untuk vision
+                     imageMimeType       // Ini untuk vision
                  );
                  await sendMessage(chatId, aiResponseObject.text, messageIdToReply);
              }
         }
-        else if (shouldGenerateImage) {
+        else if (shouldGenerateImage) { // <-- PROSES GENERATE TERAKHIR
+            console.log(`Executing image generation for message ${messageId} triggered by ${triggerWordUsed}`);
             try {
                 await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'upload_photo' });
             } catch (actionError) { console.warn("Could not send upload_photo action:", actionError.message); }
 
-            const imageResult = await generateImageWithGemini(chatId, promptForAI, nameForAIContext);
+            // Panggil generateImage TANPA gambar input
+            const imageResult = await generateImageWithGemini(chatId, promptForAI, nameForAIContext, null, null);
 
             if (imageResult.base64Data && imageResult.mimeType) {
-                const caption = `📷 Jika gambarnya aneh, harap dihapus yaa 🙏😭 \n\nbingung cari prompt? kesini aja https://poe.com/prompt-img-lele
-                `;
+                 const caption = `📷 Jika gambarnya aneh, harap dihapus yaa 🙏😭 \n\nbingung cari prompt? kesini aja https://poe.com/prompt-img-lele`;
                 await sendPhotoFromBase64(chatId, imageResult.base64Data, imageResult.mimeType, caption, messageIdToReply);
             } else {
                 await sendMessage(chatId, imageResult.error || `Waduh ${nameForBotGreeting}, gagal bikin gambarnya nih, coba lagi nanti ya.`, messageIdToReply);
             }
         }
-        // --- Akhir Proses Image Generation ---
+        // --- Akhir Modifikasi Bagian Eksekusi ---
 
     } else if (update.message && update.message.chat) {
-        const chatId = update.message.chat.id;
-        console.log(`Ignoring non-text/photo/incomplete message update in chat ${chatId || 'unknown'}`);
+        // ... (kode penanganan pesan tidak valid sama) ...
     } else {
-        console.log('Ignoring update that is not a message or lacks required fields.');
+        // ... (kode penanganan update tidak valid sama) ...
     }
 
     res.status(200).send('OK');
 };
+
 // --- Akhir Handler Utama Vercel ---
