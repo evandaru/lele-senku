@@ -122,28 +122,24 @@ function stripMarkdown(text) {
             }
         }
 
-            // --- BAGIAN YANG DIUBAH: Penambahan Separator tanpa if (i > 0) ---
-        // Tambahkan \n\n jika dibutuhkan (implisit i > 0 karena needsDoubleNewlineBefore)
-        if (needsDoubleNewlineBefore) {
-            // Cek agar tidak jadi triple newline
-            if (!resultText.endsWith('\n\n')) {
-                // Jika resultText hanya berakhir \n, hapus dulu baru tambah \n\n
-                if (resultText.endsWith('\n')) {
-                   resultText = resultText.slice(0, -1);
-                }
-                resultText += '\n\n';
+        // Tambahkan separator SEBELUM baris saat ini (kecuali baris pertama)
+        if (i > 0) {
+            if (needsDoubleNewlineBefore) {
+                 // Pastikan tidak menambah \n\n jika resultText sudah berakhir \n\n
+                 if (!resultText.endsWith('\n\n')) {
+                    resultText += '\n\n';
+                 } else {
+                    // Jika sudah \n\n, mungkin cukup \n? Atau tidak sama sekali?
+                    // Coba tidak tambah apa-apa jika sudah \n\n
+                 }
+            } else {
+                 // Jika tidak butuh double, tambahkan single newline standard
+                  // Pastikan tidak menambah \n jika resultText sudah berakhir \n
+                 if (!resultText.endsWith('\n')) {
+                    resultText += '\n';
+                 }
             }
-            // Jika sudah \n\n, tidak perlu tambah apa-apa lagi
-       }
-       // Tambahkan \n standar jika BUKAN baris pertama DAN tidak butuh \n\n
-       else if (i > 0) {
-            // Cek agar tidak jadi double newline jika tidak perlu
-            if (!resultText.endsWith('\n')) {
-                resultText += '\n';
-            }
-       }
-       // Untuk i === 0 (baris pertama), tidak ada separator yang ditambahkan di sini.
-       // --- AKHIR BAGIAN YANG DIUBAH ---
+        }
 
         // Tambahkan konten baris saat ini
         resultText += currentLineContent;
