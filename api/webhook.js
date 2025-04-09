@@ -206,7 +206,7 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
     const modelToUse = isVisionRequest ? GEMINI_VISION_MODEL_NAME : GEMINI_TEXT_MODEL_NAME;
     const apiUrl = `${GEMINI_API_URL_BASE}${modelToUse}:generateContent?key=${GEMINI_API_KEY}`;
 
-    console.log(`Using model: ${modelToUse} for chat ${chatId}. Vision request: ${isVisionRequest}`);
+    console.log(`Using model: AI for chat ${chatId}. Vision request: ${isVisionRequest}`);
 
     // Tambahkan konteks nama & system instruction jika history kosong
     if (history.length === 0) {
@@ -264,7 +264,7 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
 
     const historyBeforeResponse = [...history]; // Simpan state sebelum request
 
-    console.log(`Calling Gemini API (${modelToUse}) for chat ${chatId}. User: ${userName}. Prompt: "${newUserPrompt || '(Image only)'}". Grounding: ${enableGrounding}`);
+    console.log(`Calling Gemini API for chat ${chatId}. User: ${userName}. Prompt: "${newUserPrompt || '(Image only)'}". Grounding: ${enableGrounding}`);
 
     // --- Request Body Disesuaikan ---
     const requestBody = {
@@ -387,21 +387,21 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
     } catch (error) {
         console.error('Error calling Gemini API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         chatHistories[chatId] = historyBeforeResponse; // Rollback
-        let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas ngobrol sama AI-nya (${modelToUse}). Coba lagi nanti ya.`;
-        if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI (${modelToUse}), coba lagi aja`; }
-        else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan nanya nih kayaknya (${modelToUse}), coba santai dulu bentar`; }
+        let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas ngobrol sama AI-nya. Coba lagi nanti ya.`;
+        if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI, coba lagi aja`; }
+        else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan nanya nih kayaknya, coba santai dulu bentar`; }
         else if (error.response?.data?.error) {
             const apiError = error.response.data.error;
-            errorMsg = `Error dari AI (${modelToUse} - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
+            errorMsg = `Error dari AI - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
             if (apiError.message && apiError.message.includes("API key not valid")) {
                  errorMsg = `Waduh ${userName}, API Key Gemini sepertinya salah atau belum diatur nih. Cek konfigurasi ya.`;
             } else if (apiError.message && apiError.message.includes("quota")) {
-                 errorMsg = `Aduh ${userName}, jatah (${modelToUse}) habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
+                 errorMsg = `Aduh ${userName}, jatah habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
             } else if (apiError.message && apiError.message.includes("inline data")) {
-                 errorMsg = `Waduh ${userName}, sepertinya ada masalah pas ngirim data gambar/file ke AI (${modelToUse}). Ukuran atau formatnya mungkin? ${apiError.message}`;
+                 errorMsg = `Waduh ${userName}, sepertinya ada masalah pas ngirim data gambar/file ke AI. Ukuran atau formatnya mungkin? ${apiError.message}`;
             }
         } else if (error.response && error.response.status >= 500) {
-             errorMsg = `Aduh ${userName}, kayaknya server AI (${modelToUse}) lagi ada masalah internal nih. Coba beberapa saat lagi.`;
+             errorMsg = `Aduh ${userName}, kayaknya server AI lagi ada masalah internal nih. Coba beberapa saat lagi.`;
         }
         return { text: errorMsg, parseMode: null };
     }
@@ -426,7 +426,7 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
     const modelToUse = GEMINI_IMAGE_MODEL_NAME;
     const apiUrl = `${GEMINI_API_URL_BASE}${modelToUse}:generateContent?key=${GEMINI_API_KEY}`;
 
-    console.log(`Calling Gemini Image API (${modelToUse}) for chat ${chatId}. User: ${userName}. Prompt: "${prompt}"`);
+    console.log(`Calling Gemini Image API for chat ${chatId}. User: ${userName}. Prompt: "${prompt}"`);
 
     const requestBody = {
         // NOTE: Image generation models usually DON'T use chat history or system instructions
@@ -459,7 +459,7 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
 
         if (!candidate) {
              console.error(`Gemini Image response missing candidates for chat ${chatId}.`, JSON.stringify(response.data, null, 2));
-             return { error: `Waduh ${userName}, AI (${modelToUse}) nggak ngasih hasil gambar nih. Coba lagi ya.` };
+             return { error: `Waduh ${userName}, Gambar kamu mungkin sus ;-; monggo Coba lagi ya.` };
         }
 
         // Handle finish reasons
@@ -509,21 +509,21 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
         }
 
     } catch (error) {
-        console.error(`Error calling Gemini Image API (${modelToUse}) for chat ${chatId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        console.error(`Error calling Gemini Image API for chat ${chatId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas bikin gambar pake AI. Coba lagi nanti ya.`;
         if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI bikin gambarnya, coba lagi aja`; }
         else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan minta gambar nih kayaknya pake , coba santai dulu bentar`; }
         else if (error.response?.data?.error) {
             const apiError = error.response.data.error;
-            errorMsg = `Error dari AI Gambar (${modelToUse} - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
+            errorMsg = `Error dari AI Gambar - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
              if (apiError.message && apiError.message.includes("API key not valid")) {
                  errorMsg = `Waduh ${userName}, API Key Gemini sepertinya salah atau belum diatur nih. Cek konfigurasi ya.`;
             } else if (apiError.message && apiError.message.includes("quota")) {
-                 errorMsg = `Aduh ${userName}, jatah bikin gambar (${modelToUse}) habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
+                 errorMsg = `Aduh ${userName}, jatah bikin gambar habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
             } else if (apiError.message && apiError.message.includes("Request payload size")) {
                  errorMsg = `Waduh ${userName}, prompt gambarnya kepanjangan. Coba dipersingkat.`;
             } else if (apiError.message && apiError.message.includes("response modalities")) {
-                 errorMsg = `Waduh ${userName}, model AI (${modelToUse}) ini sepertinya nggak bisa generate gambar/teks sesuai permintaan. Mungkin modelnya salah? (${apiError.message})`;
+                 errorMsg = `Waduh ${userName}, model AI ini sepertinya nggak bisa generate gambar/teks sesuai permintaan. Mungkin modelnya salah? (${apiError.message})`;
             } else if (apiError.message && apiError.message.includes("SAFETY")) { // Error safety eksplisit
                 errorMsg = `Maaf ${userName}, gambarmu sus ;-; Coba prompt yang lebih aman ya. (${apiError.message})`;
             }
