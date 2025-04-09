@@ -108,90 +108,64 @@ function stripMarkdown(text) {
 
     const originalLines = text.split('\n');
     const processedLines = [];
-    // Regex untuk mendeteksi item list (termasuk indentasi)
     const listItemRegex = /^(\s*)(?:[*\-+]|\d+\.)\s+(.*)$/;
-    // Regex untuk mendeteksi header Markdown (# Header)
     const headerRegex = /^\s*#+\s+/;
-    // Regex untuk mendeteksi garis horizontal (---, ***, ___)
     const hrRegex = /^\s*([-*_]){3,}\s*$/;
-    // Regex untuk mendeteksi baris yang mungkin berfungsi sebagai header kategori list
-    // (misalnya, "Semar Nusantara:", tidak terlalu inden, dan diikuti oleh item list)
     const categoryHeaderRegex = /^(\s*)([^:\n]+:)\s*$/;
     const startsWithWhitespaceRegex = /^\s+/;
 
     for (let i = 0; i < originalLines.length; i++) {
         const line = originalLines[i];
         let processedLine = line;
-        let addCheckMark = false; // Tandai apakah perlu menambah "✅"
+        let addCheckMark = false;
 
-        // 1. Lewati garis horizontal
         if (hrRegex.test(line)) {
             continue;
         }
 
-        // 2. Hapus penanda header Markdown (#)
         processedLine = processedLine.replace(headerRegex, '');
-
-        // 3. Hapus markup inline dasar (bold, italic, code, link brackets) DARI SELURUH BARIS AWAL
-        //    Kita lakukan ini sebelum logika struktur agar tidak mengganggu deteksi.
-        //    Kita akan strip lagi pada konten spesifik jika perlu.
         processedLine = processedLine.replace(/[*_`[\]()]/g, '');
-        // Hapus URL dari format [teks](url) setelah kurung dihapus
         processedLine = processedLine.replace(/\bhttps?:\/\/\S+/gi, '');
 
-        // 4. Cek apakah ini item list standar
-        const listItemMatch = line.match(listItemRegex); // Cek pada baris *asli*
-        // 5. Cek apakah ini mungkin header kategori (seperti "Nama:")
-        const categoryHeaderMatch = processedLine.match(categoryHeaderRegex); // Cek pada baris *setelah strip*
-        const nextLine = originalLines[i + 1]; // Lihat baris berikutnya
+        const listItemMatch = line.match(listItemRegex);
+        const categoryHeaderMatch = processedLine.match(categoryHeaderRegex);
+        const nextLine = originalLines[i + 1];
 
         if (listItemMatch) {
-            // Ini adalah item list standar
-            const indent = listItemMatch[1]; // Pertahankan indentasi asli
+            const indent = listItemMatch[1];
             let content = listItemMatch[2];
-            // Strip lagi markup inline dari *konten* saja (jika ada sisa)
             content = content.replace(/[*_`[\]()]/g, '').replace(/\bhttps?:\/\/\S+/gi, '');
-            processedLine = indent + '✅ ' + content.trim(); // Ganti marker dengan ✅
-            addCheckMark = false; // ✅ sudah ditambahkan
-        }
-        // Cek apakah ini header kategori: tidak inden, diakhiri ':', dan diikuti item list
-        else if (categoryHeaderMatch && !startsWithWhitespaceRegex.test(categoryHeaderMatch[1]) && nextLine && listItemRegex.test(nextLine)) {
-             // Ini kemungkinan header kategori list
-             processedLine = processedLine.trim(); // Hapus spasi ekstra
-             addCheckMark = true; // Tambahkan ✅ di depan
-        }
-        else {
-            // Ini baris biasa atau header yang bukan kategori list
-            processedLine = processedLine.trim(); // Hapus spasi awal/akhir
+            processedLine = indent + '✅ ' + content.trim();
+            addCheckMark = false;
+        } else if (categoryHeaderMatch && !startsWithWhitespaceRegex.test(categoryHeaderMatch[1]) && nextLine && listItemRegex.test(nextLine)) {
+            processedLine = processedLine.trim();
+            addCheckMark = true;
+        } else {
+            processedLine = processedLine.trim();
             addCheckMark = false;
         }
 
-        // Tambahkan ✅ jika diperlukan dan belum ditambahkan
         if (addCheckMark && processedLine) {
-             processedLine = '✅ ' + processedLine;
+            processedLine = '✅ ' + processedLine;
         }
 
-        // Hanya tambahkan baris jika tidak kosong setelah diproses
         if (processedLine.trim()) {
             processedLines.push(processedLine);
         } else if (processedLines.length > 0 && processedLines[processedLines.length - 1].trim() !== '') {
-             // Jika baris asli kosong, pertahankan sebagai pemisah paragraf (tambahkan baris kosong)
-             // kecuali jika baris sebelumnya juga kosong.
-             processedLines.push('');
+            processedLines.push('');
         }
     }
 
-    // Gabungkan baris-baris yang sudah diproses
     let resultText = processedLines.join('\n');
 
-    // Pembersihan akhir
-    resultText = resultText.replace(/ +/g, ' '); // Ganti spasi ganda -> spasi tunggal
-    resultText = resultText.replace(/✅(\S)/g, '✅ $1'); // Pastikan ada spasi setelah ✅
-    resultText = resultText.replace(/\n\s*\n/g, '\n\n'); // Normalisasi baris kosong ganda (untuk paragraf)
-    resultText = resultText.replace(/\n{3,}/g, '\n\n'); // Batasi maksimal 2 baris baru berturutan
+    resultText = resultText.replace(/ +/g, ' ');
+    resultText = resultText.replace(/✅(\S)/g, '✅ $1');
+    resultText = resultText.replace(/\n\s*\n/g, '\n\n');
+    resultText = resultText.replace(/\n{3,}/g, '\n\n');
 
-    return resultText.trim(); // Hapus spasi/baris baru di awal/akhir hasil
+    return resultText.trim();
 }
+
 // --- Akhir Fungsi stripMarkdown ---
 
 // --- Fungsi Panggil Gemini ---
