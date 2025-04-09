@@ -510,9 +510,9 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
 
     } catch (error) {
         console.error(`Error calling Gemini Image API (${modelToUse}) for chat ${chatId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas bikin gambar pake AI (${modelToUse}). Coba lagi nanti ya.`;
-        if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI (${modelToUse}) bikin gambarnya, coba lagi aja`; }
-        else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan minta gambar nih kayaknya pake (${modelToUse}), coba santai dulu bentar`; }
+        let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas bikin gambar pake AI. Coba lagi nanti ya.`;
+        if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI bikin gambarnya, coba lagi aja`; }
+        else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan minta gambar nih kayaknya pake , coba santai dulu bentar`; }
         else if (error.response?.data?.error) {
             const apiError = error.response.data.error;
             errorMsg = `Error dari AI Gambar (${modelToUse} - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
@@ -521,14 +521,14 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
             } else if (apiError.message && apiError.message.includes("quota")) {
                  errorMsg = `Aduh ${userName}, jatah bikin gambar (${modelToUse}) habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
             } else if (apiError.message && apiError.message.includes("Request payload size")) {
-                 errorMsg = `Waduh ${userName}, prompt gambarnya kepanjangan nih kayaknya buat model (${modelToUse}). Coba dipersingkat.`;
+                 errorMsg = `Waduh ${userName}, prompt gambarnya kepanjangan. Coba dipersingkat.`;
             } else if (apiError.message && apiError.message.includes("response modalities")) {
                  errorMsg = `Waduh ${userName}, model AI (${modelToUse}) ini sepertinya nggak bisa generate gambar/teks sesuai permintaan. Mungkin modelnya salah? (${apiError.message})`;
             } else if (apiError.message && apiError.message.includes("SAFETY")) { // Error safety eksplisit
-                errorMsg = `Maaf ${userName}, nggak bisa bikin gambar itu karena alasan keamanan (${modelToUse}). Coba prompt yang lebih aman ya. (${apiError.message})`;
+                errorMsg = `Maaf ${userName}, gambarmu sus ;-; Coba prompt yang lebih aman ya. (${apiError.message})`;
             }
         } else if (error.response && error.response.status >= 500) {
-             errorMsg = `Aduh ${userName}, kayaknya server AI Gambar (${modelToUse}) lagi ada masalah internal nih. Coba beberapa saat lagi.`;
+             errorMsg = `Aduh ${userName}, kayaknya server lagi ada masalah internal nih. Coba beberapa saat lagi.`;
         }
         return { error: errorMsg };
     }
