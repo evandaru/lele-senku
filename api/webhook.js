@@ -10,8 +10,8 @@ const userNicknames = require('./userNicknames.js');
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 // --- >>> Ganti ke Model yang Mendukung Vision <<< ---
 // Pilih salah satu: gemini-1.5-pro-latest, gemini-1.5-flash-latest
-const GEMINI_VISION_MODEL_NAME = "gemini-1.5-flash-latest"; // Model untuk Vision
-const GEMINI_TEXT_MODEL_NAME = "gemini-1.5-flash-latest"; // Model untuk Teks Biasa (bisa sama atau beda)
+const GEMINI_VISION_MODEL_NAME = "gemini-2.0-flash"; // Model untuk Vision
+const GEMINI_TEXT_MODEL_NAME = "gemini-2.0-flash"; // Model untuk Teks Biasa (bisa sama atau beda)
 // Gunakan nama model yang sesuai di URL
 const GEMINI_API_URL_BASE = `https://generativelanguage.googleapis.com/v1beta/models/`; // Base URL
 
