@@ -442,10 +442,10 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
         },
         // Safety settings (penting untuk gambar)
         safetySettings: [
-            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' }, // Sedikit lebih longgar?
-            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
+            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }, 
+            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
         ]
     };
 
@@ -478,7 +478,7 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
                  // Jika tidak ada gambar sama sekali dan finish reason = SAFETY/lainnya
                  console.error(`Gemini Image generation blocked for chat ${chatId}. Reason: ${candidate.finishReason}`);
                  const safetyRatings = candidate.safetyRatings ? ` (${candidate.safetyRatings.map(r => r.category + ':'+r.probability).join(', ')})` : '';
-                 return { error: `Maaf ${userName}, nggak bisa bikin gambar itu karena alasan keamanan (${candidate.finishReason}${safetyRatings}). Coba prompt yang lebih aman ya.` };
+                 return { error: `Waduh ${userName}, gambar mu sus ;-;, generate yang lainnya` };
             }
         }
 
@@ -501,10 +501,10 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
              const textPart = candidate.content?.parts?.find(part => part.text);
              if (textPart?.text) {
                  console.warn(`Gemini Image API (${modelToUse}) returned text instead of image for chat ${chatId}: "${textPart.text.substring(0,100)}..."`);
-                 return { error: `Hmm ${userName}, AI (${modelToUse}) malah ngasih teks ini:\n"${stripMarkdown(textPart.text)}"\n\nBukan gambar. Coba lagi atau ganti promptnya.` };
+                 return { error: `Hmm ${userName}, Coba ulangi` };
              } else {
                 console.error(`Gemini Image response format unexpected or missing image data for chat ${chatId}.`, JSON.stringify(response.data, null, 2));
-                return { error: `Waduh ${userName}, AI (${modelToUse}) nggak ngasih gambar atau teks yang jelas nih. Aneh.` };
+                return { error: `Waduh ${userName}, gambar mu sus ;-;` };
              }
         }
 
@@ -829,7 +829,7 @@ module.exports = async (req, res) => {
 
             if (imageResult.base64Data && imageResult.mimeType) {
                 // Sukses! Kirim gambar
-                const caption = `📷`;
+                const caption = `📷 Jika gambarnya aneh, harap dihapus yaa 🙏😭`;
                 await sendPhotoFromBase64(chatId, imageResult.base64Data, imageResult.mimeType, caption, messageIdToReply);
             } else {
                 // Gagal, kirim pesan error dari fungsi generateImageWithGemini
