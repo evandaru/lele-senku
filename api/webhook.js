@@ -259,8 +259,7 @@ module.exports = async (req, res) => {
             console.log(`Processing private message ${messageId} (no grounding) from ${nameForAIContext} (${userId})`);
         } else if (chatType === 'group' || chatType === 'supergroup') {
             let triggerWord = null;
-            // --- Ganti trigger /ai atau sofia/sof jika perlu ---
-            const triggers = ['/chat ', 'bot ', 'tanya ']; // Contoh trigger baru
+            const triggers = ['/chat ', 'lele ','le ' , 'tanya ']; // Contoh trigger baru
             for (const trig of triggers) {
                 if (lowerCaseText.startsWith(trig)) {
                     triggerWord = trig;
