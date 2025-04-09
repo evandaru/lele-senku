@@ -600,10 +600,10 @@ module.exports = async (req, res) => {
         // --- 4. Proses AI jika diperlukan ---
         if (shouldProcessAI) {
              const effectivePromptLength = (promptForAI || "").length + (imageBase64 ? imageBase64.length : 0); // Perkiraan kasar
-             const MAX_EFFECTIVE_PROMPT = 100000; // Batas lebih besar untuk vision/history
+             const MAX_EFFECTIVE_PROMPT = 4194304; // Batas lebih besar untuk vision/history
 
             if (effectivePromptLength > MAX_EFFECTIVE_PROMPT) {
-                await sendMessage(chatId, `Waduh ${nameForBotGreeting}, permintaannya (${triggerWordUsed}) terlalu besar nih (prompt/gambar > ${MAX_EFFECTIVE_PROMPT} chars/bytes). Coba dipersingkat atau pakai gambar lebih kecil ya.`, messageIdToReply);
+                await sendMessage(chatId, `pencet /clear`, messageIdToReply);
             } else if (!promptForAI && !imageBase64) {
                  // Kondisi aneh, seharusnya tidak terjadi jika shouldProcessAI=true
                  console.warn(`shouldProcessAI is true but both prompt and image are missing for chat ${chatId}, message ${messageId}. Skipping.`);
