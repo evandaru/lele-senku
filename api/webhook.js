@@ -107,68 +107,90 @@ function stripMarkdown(text) {
     if (!text) return text;
 
     const originalLines = text.split('\n');
-    const lineInfo = originalLines.map(line => ({
-        original: line,
-        wasListItem: /^\s*([*\-+]|\d+\.)\s/.test(line.trimStart()),
-        textWithoutMarker: line.replace(/^\s*([*\-+]|\d+\.)\s*/, '').trim()
-    }));
+    const processedLines = [];
+    // Regex untuk mendeteksi item list (termasuk indentasi)
+    const listItemRegex = /^(\s*)(?:[*\-+]|\d+\.)\s+(.*)$/;
+    // Regex untuk mendeteksi header Markdown (# Header)
+    const headerRegex = /^\s*#+\s+/;
+    // Regex untuk mendeteksi garis horizontal (---, ***, ___)
+    const hrRegex = /^\s*([-*_]){3,}\s*$/;
+    // Regex untuk mendeteksi baris yang mungkin berfungsi sebagai header kategori list
+    // (misalnya, "Semar Nusantara:", tidak terlalu inden, dan diikuti oleh item list)
+    const categoryHeaderRegex = /^(\s*)([^:\n]+:)\s*$/;
+    const startsWithWhitespaceRegex = /^\s+/;
 
-    let baseStrippedText = text;
-    baseStrippedText = baseStrippedText.replace(/[*_`]/g, '');
-    baseStrippedText = baseStrippedText.replace(/[\[\]]/g, '');
-    baseStrippedText = baseStrippedText.replace(/^\s*#+\s+/gm, '');
-    baseStrippedText = baseStrippedText.replace(/^\s*([-*_]){3,}\s*$/gm, '');
+    for (let i = 0; i < originalLines.length; i++) {
+        const line = originalLines[i];
+        let processedLine = line;
+        let addCheckMark = false; // Tandai apakah perlu menambah "✔"
 
-    const baseStrippedLines = baseStrippedText.split('\n');
-    let resultText = "";
-    let currentListItemsTexts = [];
+        // 1. Lewati garis horizontal
+        if (hrRegex.test(line)) {
+            continue;
+        }
 
-    for (let i = 0; i < lineInfo.length; i++) {
-        const info = lineInfo[i];
-        const currentLineBaseStripped = (baseStrippedLines[i] || "").trim();
+        // 2. Hapus penanda header Markdown (#)
+        processedLine = processedLine.replace(headerRegex, '');
 
-        if (info.wasListItem && info.textWithoutMarker) {
-             let textToAdd = info.textWithoutMarker;
-             textToAdd = textToAdd.replace(/[*_`]/g, '');
-             if (textToAdd) {
-                 currentListItemsTexts.push(textToAdd);
-             }
-        } else {
-            if (currentListItemsTexts.length > 0) {
-                let joinedList = "";
-                if (currentListItemsTexts.length === 1) { joinedList = currentListItemsTexts[0]; }
-                else if (currentListItemsTexts.length === 2) { joinedList = currentListItemsTexts.join(" dan "); }
-                else { joinedList = currentListItemsTexts.slice(0, -1).join(", ") + " dan " + currentListItemsTexts.slice(-1); }
+        // 3. Hapus markup inline dasar (bold, italic, code, link brackets) DARI SELURUH BARIS AWAL
+        //    Kita lakukan ini sebelum logika struktur agar tidak mengganggu deteksi.
+        //    Kita akan strip lagi pada konten spesifik jika perlu.
+        processedLine = processedLine.replace(/[*_`[\]()]/g, '');
+        // Hapus URL dari format [teks](url) setelah kurung dihapus
+        processedLine = processedLine.replace(/\bhttps?:\/\/\S+/gi, '');
 
-                if (resultText.length > 0 && !resultText.endsWith('\n\n')) { resultText = resultText.trimEnd() + '\n\n'; }
-                resultText += joinedList;
-                currentListItemsTexts = [];
-            }
+        // 4. Cek apakah ini item list standar
+        const listItemMatch = line.match(listItemRegex); // Cek pada baris *asli*
+        // 5. Cek apakah ini mungkin header kategori (seperti "Nama:")
+        const categoryHeaderMatch = processedLine.match(categoryHeaderRegex); // Cek pada baris *setelah strip*
+        const nextLine = originalLines[i + 1]; // Lihat baris berikutnya
 
-            const lineToAdd = currentLineBaseStripped.replace(/^\s*([*\-+]|\d+\.)\s*/, '').trim();
-            if (!info.wasListItem && lineToAdd) {
-                 if (resultText.length > 0 && !resultText.endsWith('\n\n')) { resultText = resultText.trimEnd() + '\n\n'; }
-                 resultText += lineToAdd;
-            } else if (!info.wasListItem && resultText.length > 0 && !resultText.endsWith('\n\n') && (!baseStrippedLines[i+1] || /^\s*$/.test(baseStrippedLines[i+1]))) {
-                  if (!/^\s*$/.test(currentLineBaseStripped)) {
-                    resultText = resultText.trimEnd() + '\n\n';
-                  }
-            }
+        if (listItemMatch) {
+            // Ini adalah item list standar
+            const indent = listItemMatch[1]; // Pertahankan indentasi asli
+            let content = listItemMatch[2];
+            // Strip lagi markup inline dari *konten* saja (jika ada sisa)
+            content = content.replace(/[*_`[\]()]/g, '').replace(/\bhttps?:\/\/\S+/gi, '');
+            processedLine = indent + '✔ ' + content.trim(); // Ganti marker dengan ✔
+            addCheckMark = false; // ✔ sudah ditambahkan
+        }
+        // Cek apakah ini header kategori: tidak inden, diakhiri ':', dan diikuti item list
+        else if (categoryHeaderMatch && !startsWithWhitespaceRegex.test(categoryHeaderMatch[1]) && nextLine && listItemRegex.test(nextLine)) {
+             // Ini kemungkinan header kategori list
+             processedLine = processedLine.trim(); // Hapus spasi ekstra
+             addCheckMark = true; // Tambahkan ✔ di depan
+        }
+        else {
+            // Ini baris biasa atau header yang bukan kategori list
+            processedLine = processedLine.trim(); // Hapus spasi awal/akhir
+            addCheckMark = false;
+        }
+
+        // Tambahkan ✔ jika diperlukan dan belum ditambahkan
+        if (addCheckMark && processedLine) {
+             processedLine = '✔ ' + processedLine;
+        }
+
+        // Hanya tambahkan baris jika tidak kosong setelah diproses
+        if (processedLine.trim()) {
+            processedLines.push(processedLine);
+        } else if (processedLines.length > 0 && processedLines[processedLines.length - 1].trim() !== '') {
+             // Jika baris asli kosong, pertahankan sebagai pemisah paragraf (tambahkan baris kosong)
+             // kecuali jika baris sebelumnya juga kosong.
+             processedLines.push('');
         }
     }
 
-    if (currentListItemsTexts.length > 0) {
-        let joinedList = "";
-        if (currentListItemsTexts.length === 1) { joinedList = currentListItemsTexts[0]; }
-        else if (currentListItemsTexts.length === 2) { joinedList = currentListItemsTexts.join(" dan "); }
-        else { joinedList = currentListItemsTexts.slice(0, -1).join(", ") + " dan " + currentListItemsTexts.slice(-1); }
-        if (resultText.length > 0 && !resultText.endsWith('\n\n')) { resultText = resultText.trimEnd() + '\n\n'; }
-        resultText += joinedList;
-    }
+    // Gabungkan baris-baris yang sudah diproses
+    let resultText = processedLines.join('\n');
 
-    resultText = resultText.replace(/ +/g, ' ');
-    resultText = resultText.replace(/\n{3,}/g, '\n\n');
-    return resultText.trim();
+    // Pembersihan akhir
+    resultText = resultText.replace(/ +/g, ' '); // Ganti spasi ganda -> spasi tunggal
+    resultText = resultText.replace(/✔(\S)/g, '✔ $1'); // Pastikan ada spasi setelah ✔
+    resultText = resultText.replace(/\n\s*\n/g, '\n\n'); // Normalisasi baris kosong ganda (untuk paragraf)
+    resultText = resultText.replace(/\n{3,}/g, '\n\n'); // Batasi maksimal 2 baris baru berturutan
+
+    return resultText.trim(); // Hapus spasi/baris baru di awal/akhir hasil
 }
 // --- Akhir Fungsi stripMarkdown ---
 
