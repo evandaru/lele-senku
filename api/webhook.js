@@ -335,21 +335,21 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
     } catch (error) {
         console.error('Error calling Gemini API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         chatHistories[chatId] = historyBeforeResponse;
-        let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas ngobrol sama AI-nya (${modelToUse}). Coba lagi nanti ya.`;
-        if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI (${modelToUse}), coba lagi aja`; }
-        else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan nanya nih kayaknya (${modelToUse}), coba santai dulu bentar`; }
+        let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas ngobrol sama AI-nya. Coba lagi nanti ya.`;
+        if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI, coba lagi aja`; }
+        else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan nanya nih kayaknya, coba santai dulu bentar`; }
         else if (error.response?.data?.error) {
             const apiError = error.response.data.error;
-            errorMsg = `Error dari AI (${modelToUse} - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
+            errorMsg = `Error dari AI - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
             if (apiError.message && apiError.message.includes("API key not valid")) {
                  errorMsg = `Waduh ${userName}, API Key Gemini sepertinya salah atau belum diatur nih. Cek konfigurasi ya.`;
             } else if (apiError.message && apiError.message.includes("quota")) {
-                 errorMsg = `Aduh ${userName}, jatah (${modelToUse}) habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
+                 errorMsg = `Aduh ${userName}, jatah habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
             } else if (apiError.message && apiError.message.includes("inline data")) {
-                 errorMsg = `Waduh ${userName}, sepertinya ada masalah pas ngirim data gambar/file ke AI (${modelToUse}). Ukuran atau formatnya mungkin? ${apiError.message}`;
+                 errorMsg = `Waduh ${userName}, sepertinya ada masalah pas ngirim data gambar/file ke AI. Ukuran atau formatnya mungkin? ${apiError.message}`;
             }
         } else if (error.response && error.response.status >= 500) {
-             errorMsg = `Aduh ${userName}, kayaknya server AI (${modelToUse}) lagi ada masalah internal nih. Coba beberapa saat lagi.`;
+             errorMsg = `Aduh ${userName}, kayaknya server AI lagi ada masalah internal nih. Coba beberapa saat lagi.`;
         }
         return { text: errorMsg, parseMode: null };
     }
@@ -398,7 +398,7 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
 
         if (!candidate) {
              console.error(`Gemini Image response missing candidates for chat ${chatId}.`, JSON.stringify(response.data, null, 2));
-             return { error: `Waduh ${userName}, AI (${modelToUse}) nggak ngasih hasil gambar nih. Coba lagi ya.` };
+             return { error: `Waduh ${userName}, AI nggak ngasih hasil gambar nih. Coba lagi ya.` };
         }
 
         if (candidate.finishReason && candidate.finishReason !== 'STOP') {
@@ -448,15 +448,15 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
         else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan minta gambar nih kayaknya pake , coba santai dulu bentar`; }
         else if (error.response?.data?.error) {
             const apiError = error.response.data.error;
-            errorMsg = `Error dari AI Gambar (${modelToUse} - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
+            errorMsg = `Error dari AI Gambar - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
              if (apiError.message && apiError.message.includes("API key not valid")) {
                  errorMsg = `Waduh ${userName}, API Key Gemini sepertinya salah atau belum diatur nih. Cek konfigurasi ya.`;
             } else if (apiError.message && apiError.message.includes("quota")) {
-                 errorMsg = `Aduh ${userName}, jatah bikin gambar (${modelToUse}) habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
+                 errorMsg = `Aduh ${userName}, jatah bikin gambar habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
             } else if (apiError.message && apiError.message.includes("Request payload size")) {
                  errorMsg = `Waduh ${userName}, prompt gambarnya kepanjangan. Coba dipersingkat.`;
             } else if (apiError.message && apiError.message.includes("response modalities")) {
-                 errorMsg = `Waduh ${userName}, model AI (${modelToUse}) ini sepertinya nggak bisa generate gambar/teks sesuai permintaan. Mungkin modelnya salah? (${apiError.message})`;
+                 errorMsg = `Waduh ${userName}, model AI ini sepertinya nggak bisa generate gambar/teks sesuai permintaan. Mungkin modelnya salah? (${apiError.message})`;
             } else if (apiError.message && apiError.message.includes("SAFETY")) {
                 errorMsg = `Maaf ${userName}, gambarmu sus ;-; Coba prompt yang lebih aman ya. (${apiError.message})`;
             }
@@ -468,7 +468,7 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
 }
 // --- Akhir Fungsi generateImageWithGemini ---
 
-// --- Handler Utama Vercel DIMODIFIKASI ---
+// --- Handler Utama Vercel ---
 module.exports = async (req, res) => {
     if (req.method !== 'POST') { return res.status(405).json({ error: 'Method Not Allowed' }); }
     if (!req.body || typeof req.body !== 'object') {
@@ -744,8 +744,7 @@ module.exports = async (req, res) => {
             const imageResult = await generateImageWithGemini(chatId, promptForAI, nameForAIContext);
 
             if (imageResult.base64Data && imageResult.mimeType) {
-                const caption = `📷 Jika gambarnya aneh, harap dihapus yaa 🙏😭
-                bingung cari prompt? kesini aja https://poe.com/prompt-img-lele
+                const caption = `📷 Jika gambarnya aneh, harap dihapus yaa 🙏😭 \n\nbingung cari prompt? kesini aja https://poe.com/prompt-img-lele
                 `;
                 await sendPhotoFromBase64(chatId, imageResult.base64Data, imageResult.mimeType, caption, messageIdToReply);
             } else {
