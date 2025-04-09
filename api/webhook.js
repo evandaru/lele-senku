@@ -69,85 +69,90 @@ const MAX_HISTORY_LENGTH = 50;
 function stripMarkdown(text) {
     if (!text) return text;
 
-    // Simpan info awal tentang list item (sama seperti sebelumnya)
+    // 1. Preprocessing: Store original line info and remove markers/formatting
     const lines = text.split('\n');
-    const lineInfo = lines.map(line => ({
+    const lineInfo = lines.map((line, index) => ({
         original: line,
-        wasListItem: /^\s*([*\-+]|\d+\.)\s+/.test(line)
+        wasListItem: /^\s*([*\-+]|\d+\.)\s+/.test(line),
+        index: index // Simpan index asli untuk referensi
     }));
 
-    // 1. Hapus list markers dan format umum (sama seperti sebelumnya)
-    text = text.replace(/^\s*([*\-+]|\d+\.)\s+/gm, '');
-    text = text.replace(/[*_`]/g, '');
-    text = text.replace(/[\[\]]/g, '');
-    text = text.replace(/^\s*#+\s+/gm, '');
-    text = text.replace(/^\s*([-*_]){3,}\s*$/gm, '');
+    let processedText = text;
+    processedText = processedText.replace(/^\s*([*\-+]|\d+\.)\s+/gm, ''); // Remove list markers
+    processedText = processedText.replace(/[*_`[\]]/g, '');             // Remove *, _, `, [, ]
+    processedText = processedText.replace(/^\s*#+\s+/gm, '');          // Remove # headings
+    processedText = processedText.replace(/^\s*([-*_]){3,}\s*$/gm, ''); // Remove horizontal rules
 
-    // --- >>> Langkah Pemrosesan Baris dengan Penambahan Jarak <<< ---
-    const processedLines = text.split('\n');
+    const processedLines = processedText.split('\n');
+    // Filter baris kosong yang mungkin muncul setelah replace, tapi pertahankan struktur relatif
+    const nonEmptyLines = processedLines
+        .map((line, index) => ({ text: line, originalIndex: index })) // Simpan index asli setelah replace
+        .filter(item => item.text.trim() !== ''); // Hanya ambil baris yang tidak kosong
+
     let resultText = "";
-    let introBreakAdded = false; // Tandai jika break setelah intro sudah ditambahkan
+    let previousLineInfo = null; // Lacak info baris sebelumnya
 
-    for (let i = 0; i < processedLines.length; i++) {
-        const currentLineText = processedLines[i];
-        const currentWasList = lineInfo[i]?.wasListItem; // Apakah baris INI dulunya list?
+    // 2. Iterate through non-empty lines and build result with correct spacing
+    for (let i = 0; i < nonEmptyLines.length; i++) {
+        const currentItem = nonEmptyLines[i];
+        const currentLineContent = currentItem.text;
+        // Dapatkan info asli (termasuk wasListItem) berdasarkan originalIndex
+        const currentOriginalInfo = lineInfo.find(info => info.index === currentItem.originalIndex);
+        const currentWasList = currentOriginalInfo?.wasListItem ?? false;
 
-        // --- 2. Logika Menambah Break SETELAH Intro (SEBELUM List Pertama) ---
-        // Jika baris ini adalah item list PERTAMA yang ditemui,
-        // DAN kita belum menambahkan break intro,
-        // DAN ini bukan baris pertama (i > 0),
-        // DAN teks sebelum ini tidak kosong,
-        // DAN teks sebelum ini belum diakhiri newline ganda
-        if (currentWasList && !introBreakAdded && i > 0 && resultText.trim() !== '' && !resultText.endsWith('\n\n')) {
-             // Pastikan ada newline ganda SEBELUM menambahkan baris ini
-             resultText = resultText.trimEnd() + '\n\n';
-             introBreakAdded = true; // Tandai sudah ditambahkan
-        } else if (currentWasList && !introBreakAdded) {
-            // Jika list item ada di baris pertama (i=0), atau kondisi lain,
-            // tetap tandai introBreakAdded agar tidak dicoba lagi.
-             introBreakAdded = true;
-        }
-        // --- Akhir Logika Intro Break ---
+        let needsDoubleNewlineBefore = false;
 
-        // --- 3. Tambahkan Teks Baris Saat Ini ---
-        resultText += currentLineText;
+        if (i > 0 && previousLineInfo) { // Hanya cek jika ada baris sebelumnya
+            const previousWasList = previousLineInfo.wasListItem;
 
-        // --- 4. Logika Menambah Break ANTAR Item List (Setelah Baris Saat Ini) ---
-        // Jika baris INI dulunya list item, DAN bukan baris terakhir
-        if (currentWasList && i < processedLines.length - 1) {
-            const nextLineText = processedLines[i + 1];
-            // Tambah newline ganda jika baris ini dan berikutnya ada isinya
-            if (currentLineText.trim() !== '' && nextLineText.trim() !== '') {
-                 // Cek dulu apakah sudah ada \n\n (mungkin dari intro break jika list pertama)
-                 if (!resultText.endsWith('\n\n')) {
-                    resultText += "\n\n"; // Tambah break antar list item
-                 } else {
-                    // Jika sudah ada \n\n (kasus intro break sebelum list pertama), cukup tambahkan \n standar
-                    resultText += "\n";
-                 }
-            } else {
-                 resultText += "\n"; // Jika baris ini/berikutnya kosong, cukup newline standar
+            // Kondisi 1: Transisi dari Intro ke List Pertama
+            // Jika baris sebelumnya BUKAN list, TAPI baris ini ADALAH list
+            if (!previousWasList && currentWasList) {
+                needsDoubleNewlineBefore = true;
+            }
+            // Kondisi 2: Pemisah Antar List Item
+            // Jika baris sebelumnya ADALAH list, DAN baris ini JUGA ADALAH list
+            else if (previousWasList && currentWasList) {
+                needsDoubleNewlineBefore = true;
+            }
+            // Kondisi 3: Transisi dari List Terakhir ke Penutup
+            // Jika baris sebelumnya ADALAH list, TAPI baris ini BUKAN list
+            else if (previousWasList && !currentWasList) {
+                 needsDoubleNewlineBefore = true;
             }
         }
-        // --- 5. Tambahkan Newline Standar untuk Baris Biasa ---
-        // Jika BUKAN list item (atau item terakhir), tambahkan newline standar
-        // kecuali jika ini baris terakhir.
-        else if (i < processedLines.length - 1) {
-             // Hindari menambah \n jika baris ini sudah diakhiri \n\n oleh logika sebelumnya
-             if (!resultText.endsWith('\n\n')) {
-                 resultText += "\n";
-             }
+
+        // Tambahkan separator SEBELUM baris saat ini (kecuali baris pertama)
+        if (i > 0) {
+            if (needsDoubleNewlineBefore) {
+                 // Pastikan tidak menambah \n\n jika resultText sudah berakhir \n\n
+                 if (!resultText.endsWith('\n\n')) {
+                    resultText += '\n\n';
+                 } else {
+                    // Jika sudah \n\n, mungkin cukup \n? Atau tidak sama sekali?
+                    // Coba tidak tambah apa-apa jika sudah \n\n
+                 }
+            } else {
+                 // Jika tidak butuh double, tambahkan single newline standard
+                  // Pastikan tidak menambah \n jika resultText sudah berakhir \n
+                 if (!resultText.endsWith('\n')) {
+                    resultText += '\n';
+                 }
+            }
         }
-        // --- Akhir Logika Break Antar Item ---
+
+        // Tambahkan konten baris saat ini
+        resultText += currentLineContent;
+
+        // Update info baris sebelumnya untuk iterasi berikutnya
+        previousLineInfo = { wasListItem: currentWasList }; // Simpan status list item terakhir
     }
-    text = resultText;
-    // --- >>> Akhir Langkah Pemrosesan Baris <<< ---
 
-    // 6. Rapikan spasi dan kelebihan baris baru (tetap penting)
-    text = text.replace(/ +/g, ' ');
-    text = text.replace(/\n{3,}/g, '\n\n'); // Pastikan maks 2 newline
+    // 3. Final Cleanup (opsional, tapi bisa membantu)
+    resultText = resultText.trim();
+    // resultText = resultText.replace(/\n{3,}/g, '\n\n'); // Mungkin tidak perlu jika logika di atas benar
 
-    return text.trim();
+    return resultText;
 }
 
 // --- Fungsi Panggil Gemini (Format sumber sudah plain text, pastikan AI tidak menambah Markdown) ---
