@@ -64,6 +64,28 @@ let chatHistories = {};
 const MAX_HISTORY_LENGTH = 50;
 // --- Akhir Simulasi Penyimpanan ---
 
+// Fungsi baru untuk menghapus karakter Markdown umum
+function stripMarkdown(text) {
+    if (!text) return text;
+
+    // 1. Hapus list markers (*, -, +, 1.) di awal baris
+    text = text.replace(/^\s*([*\-+]|\d+\.)\s+/gm, '');
+
+    // 2. Hapus karakter formatting umum: *, _, **, __, `, # (awal baris), [ ]
+    text = text.replace(/[*_`]/g, ''); // Hapus *, _, `
+    text = text.replace(/[\[\]]/g, ''); // Hapus [ dan ]
+    text = text.replace(/^\s*#+\s+/gm, ''); // Hapus # heading di awal baris
+
+    // 3. Opsional: Hapus garis horizontal ---, ***, ___
+    text = text.replace(/^\s*([-*_]){3,}\s*$/gm, '');
+
+    // 4. Opsional: Rapikan spasi berlebih atau baris baru ganda
+    text = text.replace(/ +/g, ' ');
+    text = text.replace(/\n{3,}/g, '\n\n');
+
+    return text.trim();
+}
+
 // --- Fungsi Panggil Gemini (Format sumber sudah plain text, pastikan AI tidak menambah Markdown) ---
 async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enableGrounding = false) {
     if (!GEMINI_API_KEY) {
@@ -158,6 +180,14 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
 
         // Ambil metadata grounding (citationMetadata)
         const groundingAttributions = candidate.citationMetadata?.citationSources;
+
+        // supaya clear
+        if (aiResponseText) {
+            console.log("Original AI text received:", aiResponseText.substring(0,100) + "..."); // Log sebelum strip
+            // Panggil fungsi pembersih SETELAH mendapatkan teks dari AI
+            aiResponseText = stripMarkdown(aiResponseText);
+            console.log("AI text after stripping Markdown:", aiResponseText.substring(0,100) + "..."); // Log setelah strip
+        }
 
         if (aiResponseText || (enableGrounding && groundingAttributions && groundingAttributions.length > 0)) {
             console.log("Gemini response text received (or grounding results found).");
