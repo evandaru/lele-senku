@@ -120,8 +120,8 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
     if (enableGrounding) {
         // Gunakan 'tools' dengan 'google_search' (atau 'googleSearchRetrieval' tergantung API version/model)
         requestBody.tools = [{
-            // 'google_search': {} // Coba ini dulu
-             'googleSearchRetrieval': {} // Atau ini jika 'google_search' tidak bekerja
+            'google_search': {} // Ganti 'googleSearchRetrieval' menjadi 'google_search'
+                                 // Biasanya cukup objek kosong {} sudah cukup
         }];
         console.log("Grounding enabled (google_search/googleSearchRetrieval) for this request.");
     }
