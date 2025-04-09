@@ -172,7 +172,7 @@ function stripMarkdown(text) {
 }
 // --- Akhir Fungsi stripMarkdown ---
 
-// --- Fungsi Panggil Gemini DIMODIFIKASI ---
+// --- Fungsi Panggil Gemini ---
 async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enableGrounding = false, imageBase64 = null, imageMimeType = null) {
     if (!GEMINI_API_KEY) {
         console.error("Gemini API key is not set.");
