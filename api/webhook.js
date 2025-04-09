@@ -65,25 +65,79 @@ const MAX_HISTORY_LENGTH = 50;
 // --- Akhir Simulasi Penyimpanan ---
 
 // Fungsi baru untuk menghapus karakter Markdown umum
+// Fungsi diperbarui untuk menghapus Markdown DAN menambah jarak antar item list
 function stripMarkdown(text) {
     if (!text) return text;
 
-    // 1. Hapus list markers (*, -, +, 1.) di awal baris
+    // Simpan dulu baris mana saja yang *dimulai* dengan list marker
+    const lines = text.split('\n');
+    const lineInfo = lines.map(line => ({
+        original: line,
+        wasListItem: /^\s*([*\-+]|\d+\.)\s+/.test(line) // Cek apakah baris ini list item
+    }));
+
+    // 1. Hapus list markers (*, -, +, 1.) di awal baris (seperti sebelumnya)
     text = text.replace(/^\s*([*\-+]|\d+\.)\s+/gm, '');
 
-    // 2. Hapus karakter formatting umum: *, _, **, __, `, # (awal baris), [ ]
+    // 2. Hapus karakter formatting umum lainnya (seperti sebelumnya)
     text = text.replace(/[*_`]/g, ''); // Hapus *, _, `
     text = text.replace(/[\[\]]/g, ''); // Hapus [ dan ]
     text = text.replace(/^\s*#+\s+/gm, ''); // Hapus # heading di awal baris
+    text = text.replace(/^\s*([-*_]){3,}\s*$/gm, ''); // Hapus garis horizontal
 
-    // 3. Opsional: Hapus garis horizontal ---, ***, ___
-    text = text.replace(/^\s*([-*_]){3,}\s*$/gm, '');
+    // --- >>> Langkah Tambahan untuk Jarak Antar Item <<< ---
+    // Setelah menghapus marker dan format lain, proses ulang barisnya
+    const processedLines = text.split('\n');
+    let resultText = "";
 
-    // 4. Opsional: Rapikan spasi berlebih atau baris baru ganda
-    text = text.replace(/ +/g, ' ');
-    text = text.replace(/\n{3,}/g, '\n\n');
+    for (let i = 0; i < processedLines.length; i++) {
+        resultText += processedLines[i]; // Tambahkan baris saat ini
 
-    return text.trim();
+        // Cek apakah baris *ini* kemungkinan besar adalah item list terakhir sebelum item list berikutnya
+        // Kita gunakan informasi 'wasListItem' yang disimpan tadi
+        // Tambahkan newline ekstra JIKA:
+        // - Baris *ini* ADA isinya (bukan baris kosong hasil replace)
+        // - Baris *berikutnya* juga ADA
+        // - Baris *ini* ATAU baris sebelumnya adalah list item (heuristic)
+        // - Baris ini TIDAK diakhiri dengan \n\n (sudah ada jarak)
+        if (i < processedLines.length - 1 && processedLines[i].trim() !== "") {
+            const currentWasList = lineInfo[i]?.wasListItem;
+            const nextWasList = lineInfo[i+1]?.wasListItem;
+            const prevWasList = i > 0 ? lineInfo[i-1]?.wasListItem : false;
+
+             // Heuristic: Jika baris ini adalah list item, atau baris sebelumnya adalah list item
+             // DAN baris berikutnya BUKAN kelanjutan paragraf biasa (misal, baris berikutnya juga list item)
+             // DAN belum ada spasi ganda
+             // Heuristic yang lebih sederhana: Jika baris INI adalah list item, tambahkan spasi setelahnya
+             // kecuali jika baris berikutnya juga list item yang SAMA (jarang terjadi)
+             // Atau: Jika baris ini adalah list item, dan BUKAN baris terakhir.
+
+            // Pendekatan lebih sederhana dan mungkin cukup:
+            // Jika baris *ini* dulunya adalah list item, tambahkan baris baru ekstra setelahnya,
+            // KECUALI jika baris berikutnya memang kosong atau ini baris terakhir.
+            if (currentWasList && i < processedLines.length - 1 && processedLines[i+1].trim() !== "") {
+                 // Cek apakah sudah ada newline ganda
+                 if (!resultText.endsWith('\n\n')) {
+                     resultText += "\n\n"; // Tambahkan newline ekstra
+                 } else {
+                     resultText += "\n"; // Hanya tambahkan newline standar
+                 }
+            } else {
+                 resultText += "\n"; // Tambahkan newline standar
+            }
+        } else if (i < processedLines.length - 1) {
+             resultText += "\n"; // Tambahkan newline standar jika bukan kondisi di atas
+        }
+    }
+    text = resultText;
+    // --- >>> Akhir Langkah Tambahan <<< ---
+
+
+    // 4. Rapikan spasi berlebih dan baris baru ganda/triple (penting setelah langkah di atas)
+    text = text.replace(/ +/g, ' '); // Ganti spasi ganda jadi tunggal
+    text = text.replace(/\n{3,}/g, '\n\n'); // Batasi maksimal 2 baris baru berurutan
+
+    return text.trim(); // Hapus spasi/newline di awal/akhir
 }
 
 // --- Fungsi Panggil Gemini (Format sumber sudah plain text, pastikan AI tidak menambah Markdown) ---
