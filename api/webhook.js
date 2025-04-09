@@ -2,44 +2,38 @@
 const axios = require('axios');
 const FormData = require('form-data');
 
-// Ambil token & key dari environment variable
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const systemInstructionText = require('./systemInstruction.js');
 const userNicknames = require('./userNicknames.js');
 
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
-// --- >>> Ganti ke Model yang Mendukung Vision <<< ---
-// Pilih salah satu: gemini-1.5-pro-latest, gemini-1.5-flash-latest
-const GEMINI_VISION_MODEL_NAME = "gemini-2.0-flash"; // Model untuk Vision
-const GEMINI_TEXT_MODEL_NAME = "gemini-2.0-flash"; // Model untuk Teks Biasa (bisa sama atau beda)
+const GEMINI_VISION_MODEL_NAME = "gemini-2.0-flash";
+const GEMINI_TEXT_MODEL_NAME = "gemini-2.0-flash";
 const GEMINI_IMAGE_MODEL_NAME = "gemini-2.0-flash-exp-image-generation";
-// Gunakan nama model yang sesuai di URL
-const GEMINI_API_URL_BASE = `https://generativelanguage.googleapis.com/v1beta/models/`; // Base URL
+const GEMINI_API_URL_BASE = `https://generativelanguage.googleapis.com/v1beta/models/`;
 
-// --- Fungsi sendMessage (Tetap Sama) ---
+// --- Fungsi sendMessage ---
 async function sendMessage(chatId, text, replyToMessageId = null) {
-    // ... (Kode sendMessage tetap sama seperti sebelumnya) ...
     if (!BOT_TOKEN) {
         console.error("Bot token is not set.");
         return;
     }
     try {
-        const MAX_LENGTH = 4096; // Batas Telegram
+        const MAX_LENGTH = 4096;
         let messageToSend = text;
-        // Pemotongan pesan sederhana
         if (text && text.length > MAX_LENGTH) {
             messageToSend = text.substring(0, MAX_LENGTH - 20) + "\n... (dipotong)";
             console.warn(`Message to ${chatId} was truncated due to length limit.`);
         } else if (!text) {
             console.warn(`Attempted to send empty message to ${chatId}. Sending fallback.`);
-            messageToSend = "(Pesan kosong)"; // Fallback jika teks kosong
+            messageToSend = "(Pesan kosong)";
         }
 
         const payload = {
             chat_id: chatId,
             text: messageToSend,
-            disable_web_page_preview: true // Penting agar URL sumber tidak memunculkan preview
+            disable_web_page_preview: true
         };
         if (replyToMessageId) { payload.reply_to_message_id = replyToMessageId; }
 
@@ -47,10 +41,9 @@ async function sendMessage(chatId, text, replyToMessageId = null) {
         console.log(`Message sent to ${chatId}` + (replyToMessageId ? ` in reply to ${replyToMessageId}` : ''));
     } catch (error) {
         console.error(`Error sending message to ${chatId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        // Fallback jika ada error parsing Markdown (meskipun sudah dihapus)
         if (error.response && error.response.status === 400 && error.response.data.description.includes("can't parse entities")) {
              console.error(`!!! Potential lingering Markdown issue detected despite parse_mode removal for message to ${chatId}. Raw text: ${text.substring(0, 100)}...`);
-             const fallbackText = text.replace(/[*_`\[\]()]/g, ''); // Hapus karakter markdown dasar
+             const fallbackText = text.replace(/[*_`\[\]()]/g, '');
              try {
                  console.log(`Attempting fallback send without potential Markdown chars to ${chatId}`);
                  const fallbackPayload = { ...payload, text: fallbackText.substring(0, MAX_LENGTH) };
@@ -63,7 +56,7 @@ async function sendMessage(chatId, text, replyToMessageId = null) {
 }
 // --- Akhir Fungsi sendMessage ---
 
-// --- >>> Fungsi BARU: sendPhotoFromBase64 <<< ---
+// --- Fungsi BARU: sendPhotoFromBase64 ---
 async function sendPhotoFromBase64(chatId, base64Data, mimeType, caption = '', replyToMessageId = null) {
     if (!BOT_TOKEN) {
         console.error("Bot token is not set for sending photo.");
@@ -76,27 +69,23 @@ async function sendPhotoFromBase64(chatId, base64Data, mimeType, caption = '', r
     }
 
     try {
-        // Decode base64 to buffer
         const imageBuffer = Buffer.from(base64Data, 'base64');
-        const fileName = `generated_image.${mimeType.split('/')[1] || 'png'}`; // Buat nama file dummy
+        const fileName = `generated_image.${mimeType.split('/')[1] || 'png'}`;
 
-        // Buat form data
         const formData = new FormData();
         formData.append('chat_id', chatId.toString());
         formData.append('photo', imageBuffer, { filename: fileName, contentType: mimeType });
-        if (caption) { formData.append('caption', caption.substring(0, 1024)); } // Batas caption Telegram
+        if (caption) { formData.append('caption', caption.substring(0, 1024)); }
         if (replyToMessageId) { formData.append('reply_to_message_id', replyToMessageId); }
 
-        // Kirim request ke Telegram API
         await axios.post(`${TELEGRAM_API}/sendPhoto`, formData, {
-            headers: formData.getHeaders(), // Penting untuk multipart/form-data
-            timeout: 60000 // Timeout lebih lama untuk upload gambar
+            headers: formData.getHeaders(),
+            timeout: 60000
         });
         console.log(`Photo sent successfully to ${chatId}` + (replyToMessageId ? ` in reply to ${replyToMessageId}` : ''));
 
     } catch (error) {
         console.error(`Error sending photo to ${chatId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        // Kirim pesan error fallback ke user
         let errorMsg = `Aduh, maaf banget, gagal ngirim gambarnya nih.`;
         if (error.response?.data?.description) {
             errorMsg += ` (${error.response.data.description})`;
@@ -108,17 +97,15 @@ async function sendPhotoFromBase64(chatId, base64Data, mimeType, caption = '', r
 }
 // --- Akhir Fungsi sendPhotoFromBase64 ---
 
-// --- Riwayat & Nama Panggilan (Tetap Sama) ---
+// --- Riwayat & Nama Panggilan ---
 let chatHistories = {};
-const MAX_HISTORY_LENGTH = 50; // Kurangi jika ada gambar agar tidak terlalu berat
+const MAX_HISTORY_LENGTH = 50;
 // --- Akhir Riwayat ---
 
-// --- Fungsi stripMarkdown (Gunakan versi yang MENGGABUNGKAN list) ---
+// --- Fungsi stripMarkdown ---
 function stripMarkdown(text) {
-    // ... (Salin kode fungsi stripMarkdown yang MENGGABUNGKAN list dari jawaban sebelumnya di sini) ...
     if (!text) return text;
 
-    // --- 1. Preprocessing: Identify list items BEFORE stripping markers ---
     const originalLines = text.split('\n');
     const lineInfo = originalLines.map(line => ({
         original: line,
@@ -126,7 +113,6 @@ function stripMarkdown(text) {
         textWithoutMarker: line.replace(/^\s*([*\-+]|\d+\.)\s*/, '').trim()
     }));
 
-    // --- 2. Basic Stripping ---
     let baseStrippedText = text;
     baseStrippedText = baseStrippedText.replace(/[*_`]/g, '');
     baseStrippedText = baseStrippedText.replace(/[\[\]]/g, '');
@@ -135,9 +121,8 @@ function stripMarkdown(text) {
 
     const baseStrippedLines = baseStrippedText.split('\n');
     let resultText = "";
-    let currentListItemsTexts = []; // Buffer untuk teks item list saat ini
+    let currentListItemsTexts = [];
 
-    // --- 3. Line-by-Line Processing for List Collapsing ---
     for (let i = 0; i < lineInfo.length; i++) {
         const info = lineInfo[i];
         const currentLineBaseStripped = (baseStrippedLines[i] || "").trim();
@@ -149,7 +134,6 @@ function stripMarkdown(text) {
                  currentListItemsTexts.push(textToAdd);
              }
         } else {
-            // Process buffered list items first
             if (currentListItemsTexts.length > 0) {
                 let joinedList = "";
                 if (currentListItemsTexts.length === 1) { joinedList = currentListItemsTexts[0]; }
@@ -158,25 +142,21 @@ function stripMarkdown(text) {
 
                 if (resultText.length > 0 && !resultText.endsWith('\n\n')) { resultText = resultText.trimEnd() + '\n\n'; }
                 resultText += joinedList;
-                currentListItemsTexts = []; // Clear buffer
+                currentListItemsTexts = [];
             }
 
-            // Add the current non-list line
             const lineToAdd = currentLineBaseStripped.replace(/^\s*([*\-+]|\d+\.)\s*/, '').trim();
             if (!info.wasListItem && lineToAdd) {
                  if (resultText.length > 0 && !resultText.endsWith('\n\n')) { resultText = resultText.trimEnd() + '\n\n'; }
                  resultText += lineToAdd;
             } else if (!info.wasListItem && resultText.length > 0 && !resultText.endsWith('\n\n') && (!baseStrippedLines[i+1] || /^\s*$/.test(baseStrippedLines[i+1]))) {
-                 // Add blank line if current line is empty non-list and previous wasn't ended with blank line
-                 // And next line is also likely empty or end of text
-                  if (!/^\s*$/.test(currentLineBaseStripped)) { // avoid adding \n\n for consecutive empty lines
+                  if (!/^\s*$/.test(currentLineBaseStripped)) {
                     resultText = resultText.trimEnd() + '\n\n';
                   }
             }
         }
     }
 
-    // --- 4. Process remaining list items ---
     if (currentListItemsTexts.length > 0) {
         let joinedList = "";
         if (currentListItemsTexts.length === 1) { joinedList = currentListItemsTexts[0]; }
@@ -186,15 +166,13 @@ function stripMarkdown(text) {
         resultText += joinedList;
     }
 
-    // --- 5. Final Cleanup ---
     resultText = resultText.replace(/ +/g, ' ');
     resultText = resultText.replace(/\n{3,}/g, '\n\n');
     return resultText.trim();
 }
 // --- Akhir Fungsi stripMarkdown ---
 
-
-// --- >>> Fungsi Panggil Gemini DIMODIFIKASI <<< ---
+// --- Fungsi Panggil Gemini DIMODIFIKASI ---
 async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enableGrounding = false, imageBase64 = null, imageMimeType = null) {
     if (!GEMINI_API_KEY) {
         console.error("Gemini API key is not set.");
@@ -208,19 +186,15 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
 
     console.log(`Using model: ${modelToUse} for chat ${chatId}. Vision request: ${isVisionRequest}`);
 
-    // Tambahkan konteks nama & system instruction jika history kosong
     if (history.length === 0) {
         history.push({ role: "system", parts: [{ text: `Pengguna saat ini adalah ${userName}.` }] });
         history.push({ role: "system", parts: [{ "text": systemInstructionText }] });
     }
 
-    // --- Struktur Konten Baru ---
     const currentUserTurnContent = [];
-    // 1. Tambahkan teks prompt pengguna
     if (newUserPrompt) {
         currentUserTurnContent.push({ text: newUserPrompt });
     }
-    // 2. Tambahkan data gambar JIKA ADA
     if (isVisionRequest) {
         currentUserTurnContent.push({
             inlineData: {
@@ -228,33 +202,25 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
                 data: imageBase64
             }
         });
-        // Jika tidak ada teks prompt (misal, hanya reply gambar), tambahkan prompt default
         if (!newUserPrompt) {
-            currentUserTurnContent.unshift({ text: "Describe this image." }); // Taruh di awal agar gambar setelahnya
+            currentUserTurnContent.unshift({ text: "Describe this image." });
              console.log("No text prompt provided with image, using default 'Describe this image.'");
         }
     }
-    // Tambahkan giliran pengguna ke history
     history.push({ role: "user", parts: currentUserTurnContent });
 
-
-    // --- Pemotongan History (Mungkin perlu lebih agresif jika ada gambar) ---
      const currentHistoryLength = history.reduce((acc, turn) => acc + JSON.stringify(turn).length, 0);
-     const MAX_HISTORY_SIZE_BYTES = 50000; // Batas ukuran history dalam byte (estimasi)
+     const MAX_HISTORY_SIZE_BYTES = 50000;
 
      if (history.length > MAX_HISTORY_LENGTH || currentHistoryLength > MAX_HISTORY_SIZE_BYTES) {
         console.warn(`History for chat ${chatId} exceeding limits (Length: ${history.length}/${MAX_HISTORY_LENGTH}, Size: ${currentHistoryLength}/${MAX_HISTORY_SIZE_BYTES}), trimming...`);
-        // Implementasi pemotongan yang lebih baik mungkin diperlukan,
-        // untuk saat ini kita potong berdasarkan jumlah giliran saja seperti sebelumnya
-        // TAPI kita kurangi turnsToKeep jika ada gambar untuk menghemat token/ukuran
         const systemPromptsCount = history.filter(h => h.role === 'system').length;
-        const conversationTurns = (history.length - systemPromptsCount); // Hitung giliran user+model
-        const turnsToKeep = isVisionRequest ? 3 : 5; // Lebih sedikit giliran jika ada gambar
+        const conversationTurns = (history.length - systemPromptsCount);
+        const turnsToKeep = isVisionRequest ? 3 : 5;
 
-        if (conversationTurns > turnsToKeep * 2) { // *2 karena user+model = 1 turn pair
+        if (conversationTurns > turnsToKeep * 2) {
             const itemsToRemove = Math.max(0, conversationTurns - (turnsToKeep * 2));
              if (itemsToRemove > 0) {
-                 // Hapus dari setelah system prompt
                  history.splice(systemPromptsCount, itemsToRemove);
                  console.log(`Trimmed ${itemsToRemove} items (turns) from history for chat ${chatId}`);
              }
@@ -262,43 +228,34 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
      }
     // --- Akhir Pemotongan History ---
 
-    const historyBeforeResponse = [...history]; // Simpan state sebelum request
+    const historyBeforeResponse = [...history];
 
     console.log(`Calling Gemini API (${modelToUse}) for chat ${chatId}. User: ${userName}. Prompt: "${newUserPrompt || '(Image only)'}". Grounding: ${enableGrounding}`);
 
-    // --- Request Body Disesuaikan ---
     const requestBody = {
-        // System instruction sekarang HARUS di luar 'contents' untuk model 1.5
         systemInstruction: {
-            role: "system", // Atau cukup parts array saja
+            role: "system",
             parts: history.filter(h => h.role === 'system').flatMap(h => h.parts)
         },
-        // 'contents' hanya berisi giliran 'user' dan 'model'
         contents: history.filter(h => h.role === 'user' || h.role === 'model'),
         generationConfig: {
-            temperature: 0.8, // Mungkin turunkan sedikit untuk deskripsi gambar
+            temperature: 0.8,
             topP: 0.9,
-            // response_mime_type: "text/plain" // Coba aktifkan jika didukung
         },
-        // Safety settings (opsional, sama seperti sebelumnya)
-        // safetySettings: [...]
     };
 
-    // Tambahkan tools untuk grounding jika diaktifkan (HANYA untuk request non-vision?)
-    // Beberapa model mungkin tidak mendukung grounding DAN vision bersamaan. Cek dokumentasi model spesifik.
-    // Untuk amannya, kita nonaktifkan grounding jika ini request vision.
     if (enableGrounding && !isVisionRequest) {
         requestBody.tools = [{'google_search': {}}];
         console.log("Grounding enabled (google_search) for this text request.");
     } else if (enableGrounding && isVisionRequest) {
         console.warn("Grounding was requested but disabled because this is a vision request.");
-        enableGrounding = false; // Pastikan flagnya false
+        enableGrounding = false;
     }
 
     try {
         const response = await axios.post(apiUrl, requestBody, {
             headers: { 'Content-Type': 'application/json' },
-            timeout: 120000 // Naikkan timeout untuk vision/grounding
+            timeout: 120000
         });
 
         const candidate = response.data?.candidates?.[0];
@@ -306,44 +263,37 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
 
         if (!candidate) {
              console.error("Gemini response missing candidates.", JSON.stringify(response.data, null, 2));
-             chatHistories[chatId] = historyBeforeResponse; // Rollback
+             chatHistories[chatId] = historyBeforeResponse;
              return { text: `Waduh ${userName}, AI-nya nggak ngasih respon nih kali ini. Coba lagi ya.`, parseMode: null };
         }
 
-        // Handle potential finish reasons (misal: safety)
         if (candidate.finishReason && candidate.finishReason !== 'STOP') {
              console.warn(`Gemini response finished with reason: ${candidate.finishReason}. Content may be incomplete or blocked.`);
-             // Jika karena SAFETY, ambil teks jika ada, atau beri pesan khusus
              aiResponseText = candidate.content?.parts?.[0]?.text || '';
              if (!aiResponseText) {
-                 chatHistories[chatId] = historyBeforeResponse; // Rollback history
+                 chatHistories[chatId] = historyBeforeResponse;
                  return { text: `Maaf ${userName}, respons AI diblokir karena alasan keamanan (${candidate.finishReason}). Coba prompt yang berbeda ya.`, parseMode: null };
              }
-             // Jika ada teks sebagian, tambahkan catatan
              aiResponseText += `\n\n(Respons mungkin tidak lengkap karena: ${candidate.finishReason})`;
         } else {
              aiResponseText = candidate.content?.parts?.[0]?.text;
         }
 
 
-        // Ambil metadata grounding (citationMetadata) HANYA jika grounding aktif
         const groundingAttributions = (enableGrounding && candidate.citationMetadata?.citationSources) ? candidate.citationMetadata.citationSources : null;
 
         if (aiResponseText) {
             console.log("Original AI text received:", aiResponseText.substring(0,100) + "...");
-            aiResponseText = stripMarkdown(aiResponseText); // Bersihkan Markdown
+            aiResponseText = stripMarkdown(aiResponseText);
             console.log("AI text after stripping Markdown:", aiResponseText.substring(0,100) + "...");
 
-            // Tambahkan giliran model ke history (HANYA teks)
             history.push({ role: "model", parts: [{ text: aiResponseText }] });
-            chatHistories[chatId] = history; // Update history
+            chatHistories[chatId] = history;
 
             let finalResponseText = aiResponseText;
-            let parseMode = null; // Tetap null
+            let parseMode = null;
 
-            // Proses Atribusi Grounding (jika ada dan aktif)
             if (groundingAttributions && groundingAttributions.length > 0) {
-                 // ... (Kode untuk menambahkan sumber grounding tetap sama seperti sebelumnya) ...
                 console.log("Grounding attributions found:", groundingAttributions.length);
                 finalResponseText += "\n\nSumber:";
 
@@ -365,28 +315,26 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
                     console.warn("Could not format any valid sources from grounding attributions.");
                 }
 
-            } else if (enableGrounding) { // Jika grounding aktif tapi tak ada hasil
+            } else if (enableGrounding) {
                 console.log("Grounding was enabled, but no attributions found in response.");
             }
 
             return { text: finalResponseText.trim(), parseMode: null };
 
         } else if (!aiResponseText && isVisionRequest) {
-            // Kasus khusus: Vision request tapi tidak ada teks balasan
              console.warn("Vision request successful but no text description returned.");
-             history.push({ role: "model", parts: [{ text: "(Deskripsi gambar tidak tersedia)" }] }); // Simpan placeholder
+             history.push({ role: "model", parts: [{ text: "(Deskripsi gambar tidak tersedia)" }] });
              chatHistories[chatId] = history;
              return { text: `Hmm ${userName}, AI-nya bisa lihat gambarnya, tapi nggak bisa ngasih deskripsi teksnya nih. Aneh ya.`, parseMode: null };
         } else {
-            // Kasus tidak ada teks sama sekali (bukan vision atau vision gagal total)
             console.error("Gemini response format unexpected or empty text.", JSON.stringify(response.data, null, 2));
-            chatHistories[chatId] = historyBeforeResponse; // Rollback
+            chatHistories[chatId] = historyBeforeResponse;
             return { text: "Waduh, AI-nya lagi diem nih, nggak ngasih jawaban.", parseMode: null };
         }
 
     } catch (error) {
         console.error('Error calling Gemini API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        chatHistories[chatId] = historyBeforeResponse; // Rollback
+        chatHistories[chatId] = historyBeforeResponse;
         let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas ngobrol sama AI-nya (${modelToUse}). Coba lagi nanti ya.`;
         if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI (${modelToUse}), coba lagi aja`; }
         else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan nanya nih kayaknya (${modelToUse}), coba santai dulu bentar`; }
@@ -408,7 +356,7 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
 }
 // --- Akhir Fungsi Gemini ---
 
-// --- >>> Fungsi BARU: generateImageWithGemini <<< ---
+// --- Fungsi BARU: generateImageWithGemini ---
 async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
     if (!GEMINI_API_KEY) {
         console.error("Gemini API key is not set for image generation.");
@@ -429,30 +377,21 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
     console.log(`Calling Gemini Image API (${modelToUse}) for chat ${chatId}. User: ${userName}. Prompt: "${prompt}"`);
 
     const requestBody = {
-        // NOTE: Image generation models usually DON'T use chat history or system instructions
         contents: [{
             role: "user",
             parts: [{ text: prompt }]
         }],
         generationConfig: {
-            // --- >>> PENTING: Minta output Text dan Image <<< ---
             responseModalities: ["TEXT", "IMAGE"],
-            temperature: 0.7, // Mungkin perlu disesuaikan
-            // Tambahkan parameter lain jika didukung dan diperlukan (cek docs model spesifik)
+            temperature: 0.7,
         },
-        // Safety settings (penting untuk gambar)
-        // safetySettings: [
-        //     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }, 
-        //     { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-        //     { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-        //     { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
-        // ]
+        // safetySettings: [...] // Safety settings example, actual values depend on needs
     };
 
     try {
         const response = await axios.post(apiUrl, requestBody, {
             headers: { 'Content-Type': 'application/json' },
-            timeout: 180000 // Timeout lebih lama untuk image generation (3 menit)
+            timeout: 180000
         });
 
         const candidate = response.data?.candidates?.[0];
@@ -462,10 +401,8 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
              return { error: `Waduh ${userName}, AI (${modelToUse}) nggak ngasih hasil gambar nih. Coba lagi ya.` };
         }
 
-        // Handle finish reasons
         if (candidate.finishReason && candidate.finishReason !== 'STOP') {
             console.warn(`Gemini Image response for chat ${chatId} finished with reason: ${candidate.finishReason}. Checking for partial content.`);
-             // Cek apakah ada gambar meskipun finish reason aneh (misal 'SAFETY')
             const imagePart = candidate.content?.parts?.find(part => part.inlineData);
             if (imagePart?.inlineData?.data) {
                  console.log(`Image found despite finish reason ${candidate.finishReason} for chat ${chatId}. Proceeding.`);
@@ -475,29 +412,25 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
                      textFallback: `(Gambar berhasil dibuat, tapi ada peringatan: ${candidate.finishReason})`
                  };
             } else {
-                 // Jika tidak ada gambar sama sekali dan finish reason = SAFETY/lainnya
                  console.error(`Gemini Image generation blocked for chat ${chatId}. Reason: ${candidate.finishReason}`);
                  const safetyRatings = candidate.safetyRatings ? ` (${candidate.safetyRatings.map(r => r.category + ':'+r.probability).join(', ')})` : '';
                  return { error: `Waduh ${userName}, gambar mu sus ;-;, generate yang lainnya` };
             }
         }
 
-        // Cari bagian gambar di dalam 'parts'
         const imagePart = candidate.content?.parts?.find(part => part.inlineData);
 
         if (imagePart?.inlineData?.data && imagePart?.inlineData?.mimeType) {
             console.log(`Image successfully generated for chat ${chatId}. MimeType: ${imagePart.inlineData.mimeType}`);
-            // Cari juga bagian teks jika ada (untuk logging atau fallback)
             const textPart = candidate.content?.parts?.find(part => part.text);
             const textFallback = textPart ? stripMarkdown(textPart.text) : null;
 
             return {
                 base64Data: imagePart.inlineData.data,
                 mimeType: imagePart.inlineData.mimeType,
-                textFallback: textFallback // Kirim juga teks jika ada
+                textFallback: textFallback
             };
         } else {
-            // Jika tidak ada gambar, cek apakah ada teks sebagai gantinya
              const textPart = candidate.content?.parts?.find(part => part.text);
              if (textPart?.text) {
                  console.warn(`Gemini Image API (${modelToUse}) returned text instead of image for chat ${chatId}: "${textPart.text.substring(0,100)}..."`);
@@ -524,7 +457,7 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
                  errorMsg = `Waduh ${userName}, prompt gambarnya kepanjangan. Coba dipersingkat.`;
             } else if (apiError.message && apiError.message.includes("response modalities")) {
                  errorMsg = `Waduh ${userName}, model AI (${modelToUse}) ini sepertinya nggak bisa generate gambar/teks sesuai permintaan. Mungkin modelnya salah? (${apiError.message})`;
-            } else if (apiError.message && apiError.message.includes("SAFETY")) { // Error safety eksplisit
+            } else if (apiError.message && apiError.message.includes("SAFETY")) {
                 errorMsg = `Maaf ${userName}, gambarmu sus ;-; Coba prompt yang lebih aman ya. (${apiError.message})`;
             }
         } else if (error.response && error.response.status >= 500) {
@@ -535,7 +468,7 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
 }
 // --- Akhir Fungsi generateImageWithGemini ---
 
-// --- >>> Handler Utama Vercel DIMODIFIKASI <<< ---
+// --- Handler Utama Vercel DIMODIFIKASI ---
 module.exports = async (req, res) => {
     if (req.method !== 'POST') { return res.status(405).json({ error: 'Method Not Allowed' }); }
     if (!req.body || typeof req.body !== 'object') {
@@ -562,7 +495,7 @@ module.exports = async (req, res) => {
         const nameForBotGreeting = nickname || firstName || (username ? `@${username}` : null) || 'kamu';
 
         let shouldProcessAI = false;
-        let shouldGenerateImage = false; // <-- Flag baru untuk image generation
+        let shouldGenerateImage = false;
         let promptForAI = "";
         let messageIdToReply = messageId;
         let enableGrounding = false;
@@ -573,34 +506,29 @@ module.exports = async (req, res) => {
         const lowerCaseText = messageText.toLowerCase();
         const BOT_USER_ID = BOT_TOKEN ? parseInt(BOT_TOKEN.split(':')[0], 10) : null;
 
-        // --- DEFINISIKAN TRIGGER ---
         const chatTriggers = ['/chat ', 'lele ', 'le ', 'tanya '];
         const groundingTriggers = ['/info ', 'inpo ', 'kabar ', '/po '];
-        // --- >>> Trigger Image Generation <<< ---
         const imageTriggers = ['/img ', 'img ', 'buat ', 'gambar '];
 
-        // --- 0. Cek Trigger Image Generation DULU ---
         let imageTriggerFound = false;
         for (const trigger of imageTriggers) {
             if (lowerCaseText.startsWith(trigger)) {
                 triggerWordUsed = trigger.trim();
                 promptForAI = messageText.substring(trigger.length).trim();
                 if (promptForAI) {
-                    shouldGenerateImage = true; // Aktifkan flag image generation
+                    shouldGenerateImage = true;
                     console.log(`Processing IMAGE generation request (Trigger: '${triggerWordUsed}') from ${nameForAIContext} (${userId})`);
                 } else {
                     await sendMessage(chatId, `Mau ${triggerWordUsed} apa, ${nameForBotGreeting}? Kasih tau dong. Contoh: ${triggerWordUsed} pemandangan senja di pantai`, messageIdToReply);
-                    shouldGenerateImage = false; // Jangan proses jika prompt kosong
+                    shouldGenerateImage = false;
                 }
                 imageTriggerFound = true;
-                break; // Keluar loop image trigger
+                break;
             }
         }
 
-        // --- Jika BUKAN Image Generation, proses seperti biasa ---
         if (!shouldGenerateImage) {
 
-            // --- 1. Handle /clear ---
             if (lowerCaseText === '/clear') {
                 if (chatHistories[chatId]) {
                     delete chatHistories[chatId];
@@ -609,10 +537,9 @@ module.exports = async (req, res) => {
                 } else {
                     await sendMessage(chatId, `Hmm ${nameForBotGreeting}, belum ada history buat dihapus.`, messageIdToReply);
                 }
-                return res.status(200).send('OK'); // Langsung keluar setelah /clear
+                return res.status(200).send('OK');
             }
 
-            // --- 2. Cek Kondisi Vision: Reply ke Gambar + Trigger Chat di Teks Balasan ---
             if (repliedToMessage?.photo?.length > 0 && messageText) {
                 console.log(`Detected reply to photo by ${nameForAIContext} (${userId}). Checking text trigger...`);
                 let visionTriggerFound = false;
@@ -640,7 +567,7 @@ module.exports = async (req, res) => {
                             else if (filePath.toLowerCase().endsWith('.webp')) { imageMimeType = 'image/webp'; }
                             else { imageMimeType = 'image/jpeg'; }
                             console.log(`Image downloaded (${(imageBase64.length * 3/4 / 1024).toFixed(2)} KB) and encoded. MimeType: ${imageMimeType}`);
-                            shouldProcessAI = true; // Tandai untuk proses AI (Vision)
+                            shouldProcessAI = true;
                             enableGrounding = false;
                         } catch (error) {
                             console.error(`Error fetching/processing image for vision request (file_id: ${fileId}):`, error.message);
@@ -654,10 +581,9 @@ module.exports = async (req, res) => {
                 if (!visionTriggerFound && messageText) {
                     console.log(`Ignoring reply to photo from ${nameForAIContext} (${userId}) because text does not start with a valid chat trigger.`);
                 }
-            } // --- Akhir Cek Kondisi Vision ---
+            }
 
 
-            // --- 3. Jika BUKAN Trigger Vision, Cek Trigger Teks Biasa ---
             if (!shouldProcessAI) {
                 enableGrounding = false;
                 let groundingTriggerFound = false;
@@ -714,32 +640,27 @@ module.exports = async (req, res) => {
                         }
 
                         if (!textTriggerFound && BOT_USER_ID && repliedToMessage?.from?.id === BOT_USER_ID && repliedToMessage.text) {
-                              if (!repliedToMessage.photo) { // Pastikan bukan reply ke gambar bot
+                              if (!repliedToMessage.photo) {
                                    triggerWordUsed = 'reply_to_bot_text';
-                                   // Ambil teks bot sebelumnya dan teks user sekarang
                                    const botPreviousText = repliedToMessage.text;
                                    const userReplyText = messageText;
 
-                                   // Cari giliran terakhir bot di history
                                    let history = chatHistories[chatId] || [];
                                    const lastBotTurnIndex = history.map(h => h.role).lastIndexOf('model');
 
                                    if(lastBotTurnIndex !== -1 && history[lastBotTurnIndex].parts[0].text.includes(botPreviousText.substring(0, 50))) {
-                                        // Jika history cocok, lanjutkan conversation
-                                        promptForAI = userReplyText; // Cukup kirim prompt user
+                                        promptForAI = userReplyText;
                                         console.log(`Continuing conversation based on reply to bot message ${repliedToMessage.message_id}`);
                                    } else {
-                                        // Jika history tidak cocok atau tidak ada, buat konteks manual
                                         console.warn(`Could not find matching bot turn in history for reply ${repliedToMessage.message_id}. Creating manual context.`);
                                         promptForAI = `Ini adalah respons saya sebelumnya: "${botPreviousText}"\n\nSekarang tanggapi ini dari ${nameForAIContext}: "${userReplyText}"`;
-                                        // Hapus history lama jika konteksnya jadi aneh
-                                        if(history.length > 2) { // Sisakan system prompt jika ada
+                                        if(history.length > 2) {
                                             const systemPrompts = history.filter(h => h.role === 'system');
                                             chatHistories[chatId] = systemPrompts;
                                             console.warn(`Resetting history for chat ${chatId} due to potential context mismatch.`);
                                         }
                                    }
-                                   textTriggerFound = true; // Tandai sebagai trigger yang valid
+                                   textTriggerFound = true;
                               }
                          }
 
@@ -754,7 +675,7 @@ module.exports = async (req, res) => {
                               }
                              promptForAI = `Berikut adalah pesan dari ${originalSenderName}: "${repliedText}"\n\nTanggapi pesan tersebut dengan memperhatikan pertanyaan/pernyataan saya (${nameForAIContext}) berikut: "${promptForAI}"`;
                              console.log(`Added context from replied text message ${repliedToMessage.message_id}`);
-                             messageIdToReply = repliedToMessage.message_id; // Balas ke pesan asli
+                             messageIdToReply = repliedToMessage.message_id;
                          }
 
                         if (textTriggerFound && promptForAI) {
@@ -784,13 +705,12 @@ module.exports = async (req, res) => {
                     }
                 }
             }
-        } // --- Akhir: Jika BUKAN Image Generation ---
+        }
 
 
-        // --- 4. Proses AI (Teks/Vision) JIKA diperlukan ---
         if (shouldProcessAI) {
              const effectivePromptLength = (promptForAI || "").length + (imageBase64 ? imageBase64.length : 0);
-             const MAX_EFFECTIVE_PROMPT = 4 * 1024 * 1024; // 4MB
+             const MAX_EFFECTIVE_PROMPT = 4 * 1024 * 1024;
 
              console.log(`Effective TEXT/VISION prompt/image size: ${effectivePromptLength} bytes (Limit: ${MAX_EFFECTIVE_PROMPT})`);
 
@@ -799,7 +719,6 @@ module.exports = async (req, res) => {
              } else if (!promptForAI && !imageBase64) {
                   console.warn(`shouldProcessAI is true but both prompt and image are missing for chat ${chatId}, message ${messageId}. Skipping.`);
              } else {
-                 // Kirim 'typing' jika belum (bukan vision yang sudah kirim)
                  if (!imageBase64) {
                      try {
                          await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'typing' });
@@ -817,22 +736,19 @@ module.exports = async (req, res) => {
                  await sendMessage(chatId, aiResponseObject.text, messageIdToReply);
              }
         }
-        // --- >>> 5. Proses Image Generation JIKA diperlukan <<< ---
         else if (shouldGenerateImage) {
-            // Kirim 'upload_photo' action
             try {
                 await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'upload_photo' });
             } catch (actionError) { console.warn("Could not send upload_photo action:", actionError.message); }
 
-            // Panggil fungsi image generation
             const imageResult = await generateImageWithGemini(chatId, promptForAI, nameForAIContext);
 
             if (imageResult.base64Data && imageResult.mimeType) {
-                // Sukses! Kirim gambar
-                const caption = `📷 Jika gambarnya aneh, harap dihapus yaa 🙏😭`;
+                const caption = `📷 Jika gambarnya aneh, harap dihapus yaa 🙏😭
+                bingung cari prompt? kesini aja https://poe.com/prompt-img-lele
+                `;
                 await sendPhotoFromBase64(chatId, imageResult.base64Data, imageResult.mimeType, caption, messageIdToReply);
             } else {
-                // Gagal, kirim pesan error dari fungsi generateImageWithGemini
                 await sendMessage(chatId, imageResult.error || `Waduh ${nameForBotGreeting}, gagal bikin gambarnya nih, coba lagi nanti ya.`, messageIdToReply);
             }
         }
@@ -847,3 +763,4 @@ module.exports = async (req, res) => {
 
     res.status(200).send('OK');
 };
+// --- Akhir Handler Utama Vercel ---
