@@ -379,9 +379,26 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
         }],
         generationConfig: {
             responseModalities: ["TEXT", "IMAGE"],
-            temperature: 0.7,
+            temperature: 0.3,
         },
-        // safetySettings: [...] // Safety settings example, actual values depend on needs
+        safetySettings: [
+            {
+                category: "HARM_CATEGORY_HARASSMENT",
+                threshold: "BLOCK_NONE" // Melonggarkan filter pelecehan
+            },
+            {
+                category: "HARM_CATEGORY_HATE_SPEECH",
+                threshold: "BLOCK_NONE" // Melonggarkan filter ujaran kebencian
+            },
+            {
+                category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                threshold: "BLOCK_NONE" // Melonggarkan filter konten seksual eksplisit
+            },
+            {
+                category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+                threshold: "BLOCK_NONE" // Melonggarkan filter konten berbahaya
+            }
+        ]
     };
 
     try {
