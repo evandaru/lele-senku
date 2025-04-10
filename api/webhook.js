@@ -384,19 +384,19 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
         safetySettings: [
             {
                 category: "HARM_CATEGORY_HARASSMENT",
-                threshold: "BLOCK_NONE" // Melonggarkan filter pelecehan
+                threshold: "BLOCK_NONE" 
             },
             {
                 category: "HARM_CATEGORY_HATE_SPEECH",
-                threshold: "BLOCK_NONE" // Melonggarkan filter ujaran kebencian
+                threshold: "BLOCK_NONE" 
             },
             {
                 category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                threshold: "BLOCK_NONE" // Melonggarkan filter konten seksual eksplisit
+                threshold: "BLOCK_NONE" 
             },
             {
                 category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-                threshold: "BLOCK_NONE" // Melonggarkan filter konten berbahaya
+                threshold: "BLOCK_NONE" 
             }
         ]
     };
@@ -481,7 +481,7 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
 }
 // --- Akhir Fungsi generateImageWithGemini ---
 
-// --- Handler untuk Inline Query (Hanya /chat dan /info) ---
+
 // --- Handler untuk Inline Query (Default /chat, Explicit /info) ---
 async function handleInlineQuery(inlineQuery, res) {
     const query = (inlineQuery.query || "").trim();
@@ -491,7 +491,6 @@ async function handleInlineQuery(inlineQuery, res) {
     const username = from.username;
     const firstName = from.first_name;
 
-    // Tentukan nama pengguna untuk konteks AI
     let nickname = username ? userNicknames[username.toLowerCase()] : null;
     const nameForAIContext = nickname || firstName || (username ? `@${username}` : null) || `User_${userId}`;
 
@@ -500,7 +499,7 @@ async function handleInlineQuery(inlineQuery, res) {
     let command = null;
     let promptForAI = '';
     let enableGrounding = false;
-    let explicitTriggerFound = false; // Flag untuk menandai jika trigger eksplisit (/info atau /chat) ditemukan
+    let explicitTriggerFound = false; 
     const lowerCaseQuery = query.toLowerCase();
 
     // --- PRIORITAS 1: Cek Trigger Grounding (/info) ---
@@ -508,7 +507,7 @@ async function handleInlineQuery(inlineQuery, res) {
         ['/info ', 'info', true],
         ['inpo ', 'info', true],
         ['kabar ', 'info', true],
-        ['/po ', 'info', true], // Asumsi /po itu sama dengan info
+        ['/po ', 'info', true], 
     ];
 
     for (const [trigger, cmd, grounding] of groundingTriggers) {
@@ -544,35 +543,26 @@ async function handleInlineQuery(inlineQuery, res) {
 
     // --- PRIORITAS 3: Default ke Chat (Jika tidak ada trigger eksplisit DAN ada query) ---
     if (!explicitTriggerFound && query) {
-        command = 'chat'; // Default command
-        promptForAI = query; // Gunakan seluruh query sebagai prompt
-        enableGrounding = false; // Default tidak pakai grounding
+        command = 'chat'; 
+        promptForAI = query; 
+        enableGrounding = false; 
         console.log(`Inline query using DEFAULT CHAT behavior. Command='${command}', Grounding=${enableGrounding}. Prompt: "${promptForAI}"`);
     }
 
     // === PENANGANAN KASUS ===
 
-    // 1. Tidak ada Query Sama Sekali (atau hanya spasi)
     if (!command) {
-        // Ini terjadi jika query benar-benar kosong ATAU jika query tidak cocok trigger eksplisit dan juga kosong
         console.log(`Inline query is empty or invalid. Ignoring.`);
-        // Beri saran jika query kosong
         const suggestion = query ? null : "Sabar, si Ai lagi mikir uyy 😭";
         return answerInlineQuery(inlineQueryId, [], res, suggestion);
     }
 
-    // 2. Trigger Eksplisit Ada, tapi Tidak Ada Teks Setelahnya
-    //    (Ini hanya relevan jika explicitTriggerFound == true)
     if (explicitTriggerFound && !promptForAI) {
-        // Dapatkan trigger yang digunakan dari query asli
         const usedTrigger = query.trim().split(' ')[0];
         console.log(`Inline query has explicit trigger "${usedTrigger}" but no prompt text.`);
         return answerInlineQuery(inlineQueryId, [], res, `Butuh teks setelah ${usedTrigger}...`);
     }
-    // Catatan: Kasus default (command='chat', explicitTriggerFound=false) secara inheren memiliki promptForAI jika command terset, jadi cek di atas cukup.
 
-
-    // 3. Command dan Prompt valid -> Panggil AI
     let results = [];
     let errorMessageForResult = null;
 
@@ -605,7 +595,6 @@ async function handleInlineQuery(inlineQuery, res) {
                     message_text: responseText,
                     disable_web_page_preview: true
                 },
-                // thumb_url: 'URL_KE_IKON_BOT_ANDA' // Opsional
             });
             console.log(`Prepared InlineQueryResultArticle for query ID ${inlineQueryId}`);
         } else {
@@ -618,7 +607,6 @@ async function handleInlineQuery(inlineQuery, res) {
         errorMessageForResult = "Waduh, ada masalah internal pas proses permintaanmu.";
     }
 
-    // Jika terjadi error selama proses AI, tampilkan sebagai hasil
     if (errorMessageForResult && results.length === 0) {
         results.push({
             type: 'article',
@@ -630,16 +618,14 @@ async function handleInlineQuery(inlineQuery, res) {
         console.log(`Prepared error message as InlineQueryResultArticle for query ID ${inlineQueryId}`);
     }
 
-    // Kirim hasil
     return answerInlineQuery(inlineQueryId, results, res);
 }
 
-// Pastikan fungsi answerInlineQuery masih ada dan benar
 async function answerInlineQuery(inlineQueryId, results, res, switchPmText = null, switchPmParameter = 'inline_help') {
     const payload = {
         inline_query_id: inlineQueryId,
         results: results,
-        cache_time: 5 // Cache sebentar (5 detik)
+        cache_time: 5 
     };
 
     if (switchPmText) {
@@ -661,14 +647,12 @@ async function answerInlineQuery(inlineQueryId, results, res, switchPmText = nul
     }
 }
 
-// --- (Fungsi lain seperti getGeminiResponse, sendMessage, dll tetap ada) ---
 // --- Akhir Handler Inline Query ---
 
 // --- Inline Gambar ---
 async function generateImageForInlineQuery(prompt) {
     try {
-        // Panggil fungsi generateImageWithGemini Anda
-        const imageResult = await generateImageWithGemini(null, prompt, 'Inline User'); // chatId tidak perlu di sini
+        const imageResult = await generateImageWithGemini(null, prompt, 'Inline User'); 
 
         if (imageResult.error) {
             console.warn(`Image generation failed for inline query "${prompt}": ${imageResult.error}`);
@@ -695,7 +679,7 @@ async function answerInlineQuery(inlineQueryId, results, res, switchPmText = nul
     const payload = {
         inline_query_id: inlineQueryId,
         results: results,
-        cache_time: 10 // Cache sebentar (misal 10 detik) untuk query yang sama
+        cache_time: 10 
     };
 
     if (switchPmText) {
@@ -704,20 +688,18 @@ async function answerInlineQuery(inlineQueryId, results, res, switchPmText = nul
     }
 
     try {
-        // Penting: Jangan kirim base64 atau data besar di sini
+       
         await axios.post(`${TELEGRAM_API}/answerInlineQuery`, payload);
         console.log(`Answered inline query ${inlineQueryId} with ${results.length} results.`);
-        if (!res.headersSent) { // Kirim OK ke Vercel HANYA jika belum terkirim
+        if (!res.headersSent) { 
              res.status(200).send('OK');
         }
     } catch (error) {
         console.error(`Error answering inline query ${inlineQueryId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        if (!res.headersSent) { // Kirim Error ke Vercel HANYA jika belum terkirim
+        if (!res.headersSent) { 
             res.status(500).send('Error answering query');
         }
     }
-    // Pastikan fungsi ini MENGEMBALIKAN promise atau ditunggu (return await ...)
-    // agar Vercel tahu kapan selesai
 }
 
 // --- Akhir Pengembalian ---
