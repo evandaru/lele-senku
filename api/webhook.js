@@ -481,6 +481,92 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
 }
 // --- Akhir Fungsi generateImageWithGemini ---
 
+// --- Inline ---
+async function handleInlineQuery(inlineQuery, res) {
+    const query = inlineQuery.query;
+    const inlineQueryId = inlineQuery.id;
+
+    console.log(`Received inline query: "${query}" (ID: ${inlineQueryId})`);
+
+    if (!query) {
+        // Jika query kosong, berikan beberapa saran atau pesan default
+        return answerInlineQuery(inlineQueryId, [], res, "Ketik sesuatu untuk dicari atau digambar...");
+    }
+
+    // Panggil fungsi untuk mencari atau menghasilkan gambar berdasarkan query
+    const imageResult = await generateImageForInlineQuery(query);
+
+    if (imageResult.base64Data && imageResult.mimeType) {
+        // Buat InlineQueryResultPhoto
+        const result = {
+            type: 'photo',
+            id: 'inline_image_' + Date.now(),  // ID harus unik
+            photo_file: `data:${imageResult.mimeType};base64,${imageResult.base64Data}`,
+            thumb_url: `data:${imageResult.mimeType};base64,${imageResult.base64Data}`, // Bisa thumbnail yang lebih kecil
+            caption: `Gambar dari: ${query} \n\nPowered by @lele_senku_bot`,  // Opsional
+        };
+        await answerInlineQuery(inlineQueryId, [result], res);
+    } else {
+        // Handle error (misalnya, tidak ada hasil)
+        await answerInlineQuery(inlineQueryId, [], res, imageResult.error || "Gambar tidak ditemukan.");
+    }
+}
+// --- Akhir Inline ---
+
+// --- Inline Gambar ---
+async function generateImageForInlineQuery(prompt) {
+    try {
+        // Panggil fungsi generateImageWithGemini Anda
+        const imageResult = await generateImageWithGemini(null, prompt, 'Inline User'); // chatId tidak perlu di sini
+
+        if (imageResult.error) {
+            console.warn(`Image generation failed for inline query "${prompt}": ${imageResult.error}`);
+            return { error: imageResult.error };
+        }
+
+        if (imageResult.base64Data && imageResult.mimeType) {
+            console.log(`Image generated successfully for inline query "${prompt}"`);
+            return { base64Data: imageResult.base64Data, mimeType: imageResult.mimeType };
+        } else {
+            console.error(`Unexpected result from generateImageWithGemini for inline query "${prompt}"`);
+            return { error: 'Gagal membuat gambar.' };
+        }
+    } catch (error) {
+        console.error(`Error in generateImageForInlineQuery:`, error);
+        return { error: 'Terjadi kesalahan saat memproses permintaan.' };
+    }
+}
+// --- Akhir Gambar ---
+
+// --- Pengembalian ---
+
+async function answerInlineQuery(inlineQueryId, results, res, errorMessage = null) {
+    const payload = {
+        inline_query_id: inlineQueryId,
+        results: results,
+        cache_time: 0 // Matikan cache untuk hasil dinamis
+    };
+
+    if (errorMessage) {
+        payload.switch_pm_text = errorMessage;
+        payload.switch_pm_parameter = 'inline_error';
+    }
+
+    try {
+        await axios.post(`${TELEGRAM_API}/answerInlineQuery`, payload);
+        console.log(`Answered inline query ${inlineQueryId} with ${results.length} results.`);
+        res.status(200).send('OK');  // Respon ke Vercel SEBELUM return
+    } catch (error) {
+        console.error(`Error answering inline query ${inlineQueryId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        res.status(500).send('Error'); // JANGAN mengirim OK jika terjadi kesalahan
+    }
+}
+
+// --- Akhir Pengembalian ---
+
+
+
+
 // --- Handler Utama Vercel ---
 module.exports = async (req, res) => {
     if (req.method !== 'POST') { return res.status(405).json({ error: 'Method Not Allowed' }); }
@@ -491,6 +577,11 @@ module.exports = async (req, res) => {
 
     console.log('Received update:', JSON.stringify(req.body, null, 2));
     const update = req.body;
+
+    if (update.inline_query) {
+        await handleInlineQuery(update.inline_query, res);
+        return;  
+    }
 
     if (update.message && update.message.chat && update.message.from) {
         const chatId = update.message.chat.id;
