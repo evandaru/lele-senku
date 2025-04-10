@@ -557,7 +557,7 @@ async function handleInlineQuery(inlineQuery, res) {
         // Ini terjadi jika query benar-benar kosong ATAU jika query tidak cocok trigger eksplisit dan juga kosong
         console.log(`Inline query is empty or invalid. Ignoring.`);
         // Beri saran jika query kosong
-        const suggestion = query ? null : "Ketik pertanyaan atau /info <topik>";
+        const suggestion = query ? null : "Sabar, si Ai lagi mikir uyy 😭";
         return answerInlineQuery(inlineQueryId, [], res, suggestion);
     }
 
