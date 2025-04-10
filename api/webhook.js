@@ -502,7 +502,6 @@ async function handleInlineQuery(inlineQuery, res) {
     let explicitTriggerFound = false; 
     const lowerCaseQuery = query.toLowerCase();
 
-    // --- PRIORITAS 1: Cek Trigger Grounding (/info) ---
     const groundingTriggers = [
         ['/info ', 'info', true],
         ['inpo ', 'info', true],
@@ -521,7 +520,6 @@ async function handleInlineQuery(inlineQuery, res) {
         }
     }
 
-    // --- PRIORITAS 2: Cek Trigger Chat Eksplisit (/chat) (Hanya jika grounding tidak cocok) ---
     if (!explicitTriggerFound) {
         const chatTriggers = [
             ['/chat ', 'chat', false],
@@ -533,7 +531,7 @@ async function handleInlineQuery(inlineQuery, res) {
             if (lowerCaseQuery.startsWith(trigger)) {
                 command = cmd;
                 promptForAI = query.substring(trigger.length).trim();
-                enableGrounding = grounding; // Akan selalu false di sini
+                enableGrounding = grounding; 
                 explicitTriggerFound = true;
                 console.log(`Inline query matched EXPLICIT CHAT: Command='${command}', Grounding=${enableGrounding}, Trigger='${trigger.trim()}'. Prompt: "${promptForAI}"`);
                 break;
@@ -541,15 +539,12 @@ async function handleInlineQuery(inlineQuery, res) {
         }
     }
 
-    // --- PRIORITAS 3: Default ke Chat (Jika tidak ada trigger eksplisit DAN ada query) ---
     if (!explicitTriggerFound && query) {
         command = 'chat'; 
         promptForAI = query; 
         enableGrounding = false; 
         console.log(`Inline query using DEFAULT CHAT behavior. Command='${command}', Grounding=${enableGrounding}. Prompt: "${promptForAI}"`);
     }
-
-    // === PENANGANAN KASUS ===
 
     if (!command) {
         console.log(`Inline query is empty or invalid. Ignoring.`);
@@ -704,9 +699,6 @@ async function answerInlineQuery(inlineQueryId, results, res, switchPmText = nul
 
 // --- Akhir Pengembalian ---
 
-
-
-
 // --- Handler Utama Vercel ---
 module.exports = async (req, res) => {
     if (req.method !== 'POST') { return res.status(405).json({ error: 'Method Not Allowed' }); }
@@ -826,7 +818,6 @@ module.exports = async (req, res) => {
                     console.log(`Ignoring reply to photo from ${nameForAIContext} (${userId}) because text does not start with a valid chat trigger.`);
                 }
             }
-
 
             if (!shouldProcessAI) {
                 enableGrounding = false;
@@ -950,7 +941,6 @@ module.exports = async (req, res) => {
                 }
             }
         }
-
 
         if (shouldProcessAI) {
              const effectivePromptLength = (promptForAI || "").length + (imageBase64 ? imageBase64.length : 0);
