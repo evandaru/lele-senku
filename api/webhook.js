@@ -481,37 +481,143 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
 }
 // --- Akhir Fungsi generateImageWithGemini ---
 
-// --- Inline ---
+// --- Handler untuk Inline Query (Hanya /chat dan /info) ---
 async function handleInlineQuery(inlineQuery, res) {
-    const query = inlineQuery.query;
+    const query = (inlineQuery.query || "").trim();
     const inlineQueryId = inlineQuery.id;
+    const from = inlineQuery.from;
+    const userId = from.id;
+    const username = from.username;
+    const firstName = from.first_name;
 
-    console.log(`Received inline query: "${query}" (ID: ${inlineQueryId})`);
+    // Tentukan nama pengguna untuk konteks AI
+    let nickname = username ? userNicknames[username.toLowerCase()] : null;
+    const nameForAIContext = nickname || firstName || (username ? `@${username}` : null) || `User_${userId}`;
 
-    if (!query) {
-        // Jika query kosong, berikan beberapa saran atau pesan default
-        return answerInlineQuery(inlineQueryId, [], res, "Ketik sesuatu untuk dicari atau digambar...");
+    console.log(`Received inline query from ${nameForAIContext} (${userId}): "${query}" (ID: ${inlineQueryId})`);
+
+    let command = null; // Tidak ada command default
+    let promptForAI = '';
+    let enableGrounding = false;
+    let triggerUsed = '';
+    const lowerCaseQuery = query.toLowerCase();
+
+    // Daftar trigger yang valid
+    // Format: [prefix, command_type, needs_grounding]
+    const validTriggers = [
+        ['/info ', 'info', true],
+        ['inpo ', 'info', true],
+        ['kabar ', 'info', true],
+        ['/po ', 'info', true], // Asumsi /po itu sama dengan info
+        ['/chat ', 'chat', false],
+        ['lele ', 'chat', false],
+        ['le ', 'chat', false],
+        ['tanya ', 'chat', false]
+    ];
+
+    // Cari trigger yang cocok di awal query
+    for (const [trigger, cmd, grounding] of validTriggers) {
+        if (lowerCaseQuery.startsWith(trigger)) {
+            command = cmd;
+            promptForAI = query.substring(trigger.length).trim();
+            enableGrounding = grounding;
+            triggerUsed = trigger.trim();
+            console.log(`Inline query matched: Command='${command}', Grounding=${enableGrounding}, Trigger='${triggerUsed}'. Prompt: "${promptForAI}"`);
+            break; // Hentikan pencarian setelah menemukan trigger pertama
+        }
     }
 
-    // Panggil fungsi untuk mencari atau menghasilkan gambar berdasarkan query
-    const imageResult = await generateImageForInlineQuery(query);
+    // === PENANGANAN KASUS ===
 
-    if (imageResult.base64Data && imageResult.mimeType) {
-        // Buat InlineQueryResultPhoto
-        const result = {
-            type: 'photo',
-            id: 'inline_image_' + Date.now(),  // ID harus unik
-            photo_file: `data:${imageResult.mimeType};base64,${imageResult.base64Data}`,
-            thumb_url: `data:${imageResult.mimeType};base64,${imageResult.base64Data}`, // Bisa thumbnail yang lebih kecil
-            caption: `Gambar dari: ${query} \n\nPowered by @lele_senku_bot`,  // Opsional
-        };
-        await answerInlineQuery(inlineQueryId, [result], res);
-    } else {
-        // Handle error (misalnya, tidak ada hasil)
-        await answerInlineQuery(inlineQueryId, [], res, imageResult.error || "Gambar tidak ditemukan.");
+    // 1. Tidak ada trigger yang cocok
+    if (!command) {
+        console.log(`Inline query "${query}" doesn't start with a valid trigger. Ignoring.`);
+        // Kirim hasil kosong, Telegram tidak akan menampilkan apa pun
+        // Atau bisa tambahkan switch_pm_text jika ingin memberi tahu user
+        return answerInlineQuery(inlineQueryId, [], res /*, "Gunakan /chat atau /info..." */);
     }
+
+    // 2. Trigger ada, tapi tidak ada teks setelahnya
+    if (!promptForAI) {
+        console.log(`Inline query has trigger "${triggerUsed}" but no prompt text.`);
+        // Kirim hasil kosong dengan pesan error via switch_pm
+        return answerInlineQuery(inlineQueryId, [], res, `Butuh teks setelah ${triggerUsed}...`);
+    }
+
+    // 3. Trigger dan prompt valid -> Panggil AI
+    let results = [];
+    let errorMessageForResult = null; // Pesan error jika AI gagal
+
+    try {
+        console.log(`Getting ${enableGrounding ? 'grounded' : 'standard'} AI response for inline query ID ${inlineQueryId}...`);
+
+        // Gunakan ID konteks yang unik untuk setiap query inline agar tidak tercampur
+        // Meskipun kita tidak benar-benar membangun history antar query inline
+        const contextId = `inline_${userId}_${Date.now()}`;
+
+        const aiResponseObject = await getGeminiResponse(
+            contextId,
+            promptForAI,
+            nameForAIContext,
+            enableGrounding,
+            null, // Tidak ada gambar
+            null  // Tidak ada gambar
+        );
+
+        // Idealnya, bersihkan history sementara jika getGeminiResponse menyimpannya
+        if (chatHistories[contextId]) {
+            delete chatHistories[contextId];
+             console.log(`Cleaned up temporary inline context: ${contextId}`);
+        }
+
+        // Proses hasil AI
+        if (aiResponseObject && aiResponseObject.text && !aiResponseObject.text.toLowerCase().includes("gagal") && !aiResponseObject.text.toLowerCase().includes("maaf")) {
+            const responseText = aiResponseObject.text;
+            // Judul dan deskripsi untuk tampilan hasil inline
+            const title = `${enableGrounding ? 'Info' : 'Chat'}: ${promptForAI.substring(0, 40)}${promptForAI.length > 40 ? '...' : ''}`;
+            const description = responseText.substring(0, 100) + (responseText.length > 100 ? '...' : ''); // Snippet
+
+            results.push({
+                type: 'article',
+                id: `${command}_${Date.now()}_${Math.random().toString(36).substring(7)}`, // ID unik per hasil
+                title: title,
+                description: description,
+                input_message_content: {
+                    message_text: responseText, // Teks yang akan dikirim saat user memilih hasil ini
+                    disable_web_page_preview: true
+                },
+                // thumb_url: 'URL_KE_IKON_BOT_ANDA' // Opsional: Tambahkan URL ikon bot Anda
+            });
+            console.log(`Prepared InlineQueryResultArticle for query ID ${inlineQueryId}`);
+        } else {
+            // AI gagal atau memberi respons error
+            errorMessageForResult = aiResponseObject.text || `Gagal mendapatkan respons ${command}.`;
+            console.warn(`AI response failed or contained error for inline query ID ${inlineQueryId}: ${errorMessageForResult}`);
+        }
+
+    } catch (error) {
+        console.error(`Error processing inline query ID ${inlineQueryId} ("${query}"):`, error);
+        errorMessageForResult = "Waduh, ada masalah internal pas proses permintaanmu.";
+    }
+
+    // Jika terjadi error selama proses AI, tampilkan sebagai hasil
+    if (errorMessageForResult && results.length === 0) {
+        results.push({
+            type: 'article',
+            id: `error_${Date.now()}`,
+            title: "Error",
+            description: errorMessageForResult.substring(0, 100), // Tampilkan potongan error
+            input_message_content: {
+                message_text: errorMessageForResult // Kirim pesan error lengkap jika dipilih
+            }
+        });
+        console.log(`Prepared error message as InlineQueryResultArticle for query ID ${inlineQueryId}`);
+    }
+
+    // Kirim hasil (bisa jadi hasil AI, hasil error, atau array kosong jika tidak ada trigger)
+    return answerInlineQuery(inlineQueryId, results, res);
 }
-// --- Akhir Inline ---
+// --- Akhir Handler Inline Query ---
 
 // --- Inline Gambar ---
 async function generateImageForInlineQuery(prompt) {
@@ -540,26 +646,33 @@ async function generateImageForInlineQuery(prompt) {
 
 // --- Pengembalian ---
 
-async function answerInlineQuery(inlineQueryId, results, res, errorMessage = null) {
+async function answerInlineQuery(inlineQueryId, results, res, switchPmText = null, switchPmParameter = 'inline_error') {
     const payload = {
         inline_query_id: inlineQueryId,
         results: results,
-        cache_time: 0 // Matikan cache untuk hasil dinamis
+        cache_time: 10 // Cache sebentar (misal 10 detik) untuk query yang sama
     };
 
-    if (errorMessage) {
-        payload.switch_pm_text = errorMessage;
-        payload.switch_pm_parameter = 'inline_error';
+    if (switchPmText) {
+        payload.switch_pm_text = switchPmText;
+        payload.switch_pm_parameter = switchPmParameter;
     }
 
     try {
+        // Penting: Jangan kirim base64 atau data besar di sini
         await axios.post(`${TELEGRAM_API}/answerInlineQuery`, payload);
         console.log(`Answered inline query ${inlineQueryId} with ${results.length} results.`);
-        res.status(200).send('OK');  // Respon ke Vercel SEBELUM return
+        if (!res.headersSent) { // Kirim OK ke Vercel HANYA jika belum terkirim
+             res.status(200).send('OK');
+        }
     } catch (error) {
         console.error(`Error answering inline query ${inlineQueryId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        res.status(500).send('Error'); // JANGAN mengirim OK jika terjadi kesalahan
+        if (!res.headersSent) { // Kirim Error ke Vercel HANYA jika belum terkirim
+            res.status(500).send('Error answering query');
+        }
     }
+    // Pastikan fungsi ini MENGEMBALIKAN promise atau ditunggu (return await ...)
+    // agar Vercel tahu kapan selesai
 }
 
 // --- Akhir Pengembalian ---
