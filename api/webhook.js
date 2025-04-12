@@ -13,7 +13,6 @@ const GEMINI_TEXT_MODEL_NAME = "gemini-2.0-flash";
 const GEMINI_IMAGE_MODEL_NAME = "gemini-2.0-flash-exp-image-generation";
 const GEMINI_API_URL_BASE = `https://generativelanguage.googleapis.com/v1beta/models/`;
 
-// --- Fungsi sendMessage ---
 async function sendMessage(chatId, text, replyToMessageId = null) {
     if (!BOT_TOKEN) {
         console.error("Bot token is not set.");
@@ -54,9 +53,7 @@ async function sendMessage(chatId, text, replyToMessageId = null) {
         }
     }
 }
-// --- Akhir Fungsi sendMessage ---
 
-// --- Fungsi BARU: sendPhotoFromBase64 ---
 async function sendPhotoFromBase64(chatId, base64Data, mimeType, caption = '', replyToMessageId = null) {
     if (!BOT_TOKEN) {
         console.error("Bot token is not set for sending photo.");
@@ -95,14 +92,10 @@ async function sendPhotoFromBase64(chatId, base64Data, mimeType, caption = '', r
         await sendMessage(chatId, errorMsg, replyToMessageId);
     }
 }
-// --- Akhir Fungsi sendPhotoFromBase64 ---
 
-// --- Riwayat & Nama Panggilan ---
 let chatHistories = {};
 const MAX_HISTORY_LENGTH = 50;
-// --- Akhir Riwayat ---
 
-// --- Fungsi stripMarkdown ---
 function stripMarkdown(text) {
     if (!text) return text;
 
@@ -137,16 +130,18 @@ function stripMarkdown(text) {
             content = content.replace(/[*_`[\]()]/g, '').replace(/\bhttps?:\/\/\S+/gi, '');
             processedLine = indent + '✅ ' + content.trim();
             addCheckMark = false;
-        } else if (categoryHeaderMatch && !startsWithWhitespaceRegex.test(categoryHeaderMatch[1]) && nextLine && listItemRegex.test(nextLine)) {
-            processedLine = processedLine.trim();
-            addCheckMark = true;
-        } else {
+        }
+        else if (categoryHeaderMatch && !startsWithWhitespaceRegex.test(categoryHeaderMatch[1]) && nextLine && listItemRegex.test(nextLine)) {
+             processedLine = processedLine.trim();
+             addCheckMark = true;
+        }
+        else {
             processedLine = processedLine.trim();
             addCheckMark = false;
         }
 
         if (addCheckMark && processedLine) {
-            processedLine = '✅ ' + processedLine;
+             processedLine = '✅ ' + processedLine;
         }
 
         if (processedLine.trim()) {
@@ -166,9 +161,7 @@ function stripMarkdown(text) {
     return resultText.trim();
 }
 
-// --- Akhir Fungsi stripMarkdown ---
 
-// --- Fungsi Panggil Gemini ---
 async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enableGrounding = false, imageBase64 = null, imageMimeType = null) {
     if (!GEMINI_API_KEY) {
         console.error("Gemini API key is not set.");
@@ -210,19 +203,24 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
 
      if (history.length > MAX_HISTORY_LENGTH || currentHistoryLength > MAX_HISTORY_SIZE_BYTES) {
         console.warn(`History for chat ${chatId} exceeding limits (Length: ${history.length}/${MAX_HISTORY_LENGTH}, Size: ${currentHistoryLength}/${MAX_HISTORY_SIZE_BYTES}), trimming...`);
-        const systemPromptsCount = history.filter(h => h.role === 'system').length;
+        const systemPromptIndices = history.reduce((indices, turn, index) => {
+            if (turn.role === 'system') indices.push(index);
+            return indices;
+        }, []);
+        const systemPromptsCount = systemPromptIndices.length;
         const conversationTurns = (history.length - systemPromptsCount);
+
         const turnsToKeep = isVisionRequest ? 3 : 5;
 
         if (conversationTurns > turnsToKeep * 2) {
             const itemsToRemove = Math.max(0, conversationTurns - (turnsToKeep * 2));
              if (itemsToRemove > 0) {
-                 history.splice(systemPromptsCount, itemsToRemove);
+                 const startIndexToRemove = systemPromptsCount > 0 ? systemPromptIndices[systemPromptsCount - 1] + 1 : 0;
+                 history.splice(startIndexToRemove, itemsToRemove);
                  console.log(`Trimmed ${itemsToRemove} items (turns) from history for chat ${chatId}`);
              }
         }
      }
-    // --- Akhir Pemotongan History ---
 
     const historyBeforeResponse = [...history];
 
@@ -331,28 +329,27 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
     } catch (error) {
         console.error('Error calling Gemini API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         chatHistories[chatId] = historyBeforeResponse;
+
         let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas ngobrol sama AI-nya. Coba lagi nanti ya.`;
         if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI, coba lagi aja`; }
         else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan nanya nih kayaknya, coba santai dulu bentar`; }
         else if (error.response?.data?.error) {
             const apiError = error.response.data.error;
-            errorMsg = `Error dari AI - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
-            if (apiError.message && apiError.message.includes("API key not valid")) {
+            errorMsg = `Error dari AI (${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}.`;
+             if (apiError.message && apiError.message.includes("API key not valid")) {
                  errorMsg = `Waduh ${userName}, API Key Gemini sepertinya salah atau belum diatur nih. Cek konfigurasi ya.`;
             } else if (apiError.message && apiError.message.includes("quota")) {
-                 errorMsg = `Aduh ${userName}, jatah habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
+                 errorMsg = `Aduh ${userName}, jatah (${modelToUse}) habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
             } else if (apiError.message && apiError.message.includes("inline data")) {
-                 errorMsg = `Waduh ${userName}, sepertinya ada masalah pas ngirim data gambar/file ke AI. Ukuran atau formatnya mungkin? ${apiError.message}`;
+                 errorMsg = `Waduh ${userName}, sepertinya ada masalah pas ngirim data gambar/file ke AI. Ukuran atau formatnya mungkin? (${apiError.message})`;
             }
         } else if (error.response && error.response.status >= 500) {
-             errorMsg = `Aduh ${userName}, kayaknya server AI lagi ada masalah internal nih. Coba beberapa saat lagi.`;
+             errorMsg = `Aduh ${userName}, kayaknya server AI lagi ada masalah internal nih (${error.response.status}). Coba beberapa saat lagi.`;
         }
         return { text: errorMsg, parseMode: null };
     }
 }
-// --- Akhir Fungsi Gemini ---
 
-// --- Fungsi BARU: generateImageWithGemini ---
 async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
     if (!GEMINI_API_KEY) {
         console.error("Gemini API key is not set for image generation.");
@@ -378,10 +375,9 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
             parts: [{ text: prompt }]
         }],
         generationConfig: {
-            responseModalities: ["TEXT", "IMAGE"],
+            responseMimeType: "image/png",
             temperature: 0.3,
         },
-        
     };
 
     try {
@@ -400,7 +396,7 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
         if (candidate.finishReason && candidate.finishReason !== 'STOP') {
             console.warn(`Gemini Image response for chat ${chatId} finished with reason: ${candidate.finishReason}. Checking for partial content.`);
             const imagePart = candidate.content?.parts?.find(part => part.inlineData);
-            if (imagePart?.inlineData?.data) {
+            if (imagePart?.inlineData?.data && imagePart?.inlineData?.mimeType) {
                  console.log(`Image found despite finish reason ${candidate.finishReason} for chat ${chatId}. Proceeding.`);
                  return {
                      base64Data: imagePart.inlineData.data,
@@ -410,7 +406,13 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
             } else {
                  console.error(`Gemini Image generation blocked for chat ${chatId}. Reason: ${candidate.finishReason}`);
                  const safetyRatings = candidate.safetyRatings ? ` (${candidate.safetyRatings.map(r => r.category + ':'+r.probability).join(', ')})` : '';
-                 return { error: `Waduh ${userName}, gambar mu sus ;-;, generate yang lainnya` };
+                 let blockMessage = `Waduh ${userName}, pembuatan gambar diblokir (${candidate.finishReason})${safetyRatings}. Coba prompt yang berbeda ya.`;
+                 if (candidate.finishReason === 'SAFETY') {
+                    blockMessage = `Maaf ${userName}, gambarmu dianggap tidak aman (SAFETY). Coba prompt yang lebih umum ya.${safetyRatings}`;
+                 } else if (candidate.finishReason === 'RECITATION') {
+                    blockMessage = `Maaf ${userName}, gambarmu terlalu mirip dengan materi berhak cipta (RECITATION). Coba prompt yang lebih unik.`;
+                 }
+                 return { error: blockMessage };
             }
         }
 
@@ -430,10 +432,10 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
              const textPart = candidate.content?.parts?.find(part => part.text);
              if (textPart?.text) {
                  console.warn(`Gemini Image API (${modelToUse}) returned text instead of image for chat ${chatId}: "${textPart.text.substring(0,100)}..."`);
-                 return { error: `Hmm ${userName}, Gambar mu sus coba ganti prompt` };
+                 return { error: `Hmm ${userName}, AI bilang: "${stripMarkdown(textPart.text)}"` };
              } else {
                 console.error(`Gemini Image response format unexpected or missing image data for chat ${chatId}.`, JSON.stringify(response.data, null, 2));
-                return { error: `Waduh ${userName}, gambar mu sus ;-;` };
+                return { error: `Waduh ${userName}, respons AI-nya aneh nih, nggak ada data gambarnya.` };
              }
         }
 
@@ -441,31 +443,29 @@ async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
         console.error(`Error calling Gemini Image API (${modelToUse}) for chat ${chatId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas bikin gambar pake AI. Coba lagi nanti ya.`;
         if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI bikin gambarnya, coba lagi aja`; }
-        else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan minta gambar nih kayaknya pake , coba santai dulu bentar`; }
+        else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan minta gambar nih kayaknya, coba santai dulu bentar`; }
         else if (error.response?.data?.error) {
             const apiError = error.response.data.error;
-            errorMsg = `Error dari AI Gambar - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
+            errorMsg = `Error dari AI Gambar (${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}.`;
              if (apiError.message && apiError.message.includes("API key not valid")) {
                  errorMsg = `Waduh ${userName}, API Key Gemini sepertinya salah atau belum diatur nih. Cek konfigurasi ya.`;
             } else if (apiError.message && apiError.message.includes("quota")) {
-                 errorMsg = `Aduh ${userName}, jatah bikin gambar habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
+                 errorMsg = `Aduh ${userName}, jatah bikin gambar (${modelToUse}) habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
             } else if (apiError.message && apiError.message.includes("Request payload size")) {
                  errorMsg = `Waduh ${userName}, prompt gambarnya kepanjangan. Coba dipersingkat.`;
-            } else if (apiError.message && apiError.message.includes("response modalities")) {
-                 errorMsg = `Waduh ${userName}, model AI ini sepertinya nggak bisa generate gambar/teks sesuai permintaan. Mungkin modelnya salah? (${apiError.message})`;
+            } else if (apiError.message && apiError.message.includes("response modalities") || apiError.message.includes("responseMimeType")) {
+                 errorMsg = `Waduh ${userName}, model AI (${modelToUse}) ini sepertinya nggak bisa generate gambar atau formatnya salah. Mungkin modelnya perlu diganti? (${apiError.message})`;
             } else if (apiError.message && apiError.message.includes("SAFETY")) {
-                errorMsg = `Maaf ${userName}, gambarmu sus ;-; Coba prompt yang lebih aman ya. (${apiError.message})`;
+                errorMsg = `Maaf ${userName}, prompt gambarmu diblokir karena alasan keamanan (SAFETY). Coba prompt yang lebih aman ya. (${apiError.message})`;
             }
         } else if (error.response && error.response.status >= 500) {
-             errorMsg = `Aduh ${userName}, kayaknya server lagi ada masalah internal nih. Coba beberapa saat lagi.`;
+             errorMsg = `Aduh ${userName}, kayaknya server AI gambar lagi ada masalah internal nih (${error.response.status}). Coba beberapa saat lagi.`;
         }
         return { error: errorMsg };
     }
 }
-// --- Akhir Fungsi generateImageWithGemini ---
 
 
-// --- Handler untuk Inline Query (Default /chat, Explicit /info) ---
 async function handleInlineQuery(inlineQuery, res) {
     const query = (inlineQuery.query || "").trim();
     const inlineQueryId = inlineQuery.id;
@@ -482,14 +482,28 @@ async function handleInlineQuery(inlineQuery, res) {
     let command = null;
     let promptForAI = '';
     let enableGrounding = false;
-    let explicitTriggerFound = false; 
+    let explicitTriggerFound = false;
     const lowerCaseQuery = query.toLowerCase();
 
     const groundingTriggers = [
         ['/info ', 'info', true],
         ['inpo ', 'info', true],
         ['kabar ', 'info', true],
-        ['/po ', 'info', true], 
+        ['/po ', 'info', true],
+    ];
+
+    const chatTriggers = [
+        ['/chat ', 'chat', false],
+        ['lele ', 'chat', false],
+        ['le ', 'chat', false],
+        ['tanya ', 'chat', false]
+    ];
+
+    const imageTriggersInline = [
+        ['/img ', 'img', false],
+        ['img ', 'img', false],
+        ['gambar ', 'img', false],
+        ['buat ', 'img', false],
     ];
 
     for (const [trigger, cmd, grounding] of groundingTriggers) {
@@ -504,17 +518,11 @@ async function handleInlineQuery(inlineQuery, res) {
     }
 
     if (!explicitTriggerFound) {
-        const chatTriggers = [
-            ['/chat ', 'chat', false],
-            ['lele ', 'chat', false],
-            ['le ', 'chat', false],
-            ['tanya ', 'chat', false]
-        ];
         for (const [trigger, cmd, grounding] of chatTriggers) {
             if (lowerCaseQuery.startsWith(trigger)) {
                 command = cmd;
                 promptForAI = query.substring(trigger.length).trim();
-                enableGrounding = grounding; 
+                enableGrounding = grounding;
                 explicitTriggerFound = true;
                 console.log(`Inline query matched EXPLICIT CHAT: Command='${command}', Grounding=${enableGrounding}, Trigger='${trigger.trim()}'. Prompt: "${promptForAI}"`);
                 break;
@@ -522,98 +530,130 @@ async function handleInlineQuery(inlineQuery, res) {
         }
     }
 
-    if (!explicitTriggerFound && query) {
-        command = 'chat'; 
-        promptForAI = query; 
-        enableGrounding = false; 
-        console.log(`Inline query using DEFAULT CHAT behavior. Command='${command}', Grounding=${enableGrounding}. Prompt: "${promptForAI}"`);
+     if (!explicitTriggerFound) {
+        for (const [trigger, cmd, grounding] of imageTriggersInline) {
+            if (lowerCaseQuery.startsWith(trigger)) {
+                command = cmd;
+                promptForAI = query.substring(trigger.length).trim();
+                enableGrounding = grounding;
+                explicitTriggerFound = true;
+                console.log(`Inline query matched IMAGE: Command='${command}', Trigger='${trigger.trim()}'. Prompt: "${promptForAI}"`);
+                break;
+            }
+        }
     }
 
-    if (!command) {
-        console.log(`Inline query is empty or invalid. Ignoring.`);
-        const suggestion = query ? null : "Sabar, si Ai lagi mikir uyy 😭";
-        return answerInlineQuery(inlineQueryId, [], res, suggestion);
+    if (!explicitTriggerFound && query) {
+        command = 'chat';
+        promptForAI = query;
+        enableGrounding = false;
+        console.log(`Inline query using DEFAULT CHAT behavior. Command='${command}', Grounding=${enableGrounding}. Prompt: "${promptForAI}"`);
     }
 
     if (explicitTriggerFound && !promptForAI) {
         const usedTrigger = query.trim().split(' ')[0];
         console.log(`Inline query has explicit trigger "${usedTrigger}" but no prompt text.`);
-        return answerInlineQuery(inlineQueryId, [], res, `Butuh teks setelah ${usedTrigger}...`);
+        return answerInlineQuery(inlineQueryId, [], res, `Butuh teks setelah ${usedTrigger}...`, 'inline_prompt_needed');
     }
+
+    if (!command) {
+        console.log(`Inline query is empty or no command determined. Sending default suggestion.`);
+        const suggestion = "Ketik sesuatu untuk ngobrol atau pakai /info, /img...";
+        return answerInlineQuery(inlineQueryId, [], res, suggestion, 'inline_help');
+    }
+
 
     let results = [];
     let errorMessageForResult = null;
+    let switchPmText = null;
+    let switchPmParam = 'inline_error';
 
     try {
-        console.log(`Getting ${enableGrounding ? 'grounded' : 'standard'} AI response for inline query ID ${inlineQueryId}...`);
-        const contextId = `inline_${userId}_${Date.now()}`;
-        const aiResponseObject = await getGeminiResponse(
-            contextId,
-            promptForAI,
-            nameForAIContext,
-            enableGrounding,
-            null, null
-        );
-        if (chatHistories[contextId]) {
-            delete chatHistories[contextId];
-            console.log(`Cleaned up temporary inline context: ${contextId}`);
-        }
+        if (command === 'chat' || command === 'info') {
+            console.log(`Getting ${enableGrounding ? 'grounded' : 'standard'} AI response for inline query ID ${inlineQueryId}...`);
+            const contextId = `inline_${userId}_${Date.now()}`;
+            const aiResponseObject = await getGeminiResponse(
+                contextId,
+                promptForAI,
+                nameForAIContext,
+                enableGrounding,
+                null, null
+            );
 
-        if (aiResponseObject && aiResponseObject.text && !aiResponseObject.text.toLowerCase().includes("gagal") && !aiResponseObject.text.toLowerCase().includes("maaf")) {
-            const responseText = aiResponseObject.text;
-            const title = `${enableGrounding ? 'Info' : 'Chat'}: ${promptForAI.substring(0, 40)}${promptForAI.length > 40 ? '...' : ''}`;
-            const description = responseText.substring(0, 100) + (responseText.length > 100 ? '...' : '');
+            if (chatHistories[contextId]) {
+                delete chatHistories[contextId];
+                console.log(`Cleaned up temporary inline context: ${contextId}`);
+            }
+
+            if (aiResponseObject && aiResponseObject.text && !aiResponseObject.text.toLowerCase().includes("gagal") && !aiResponseObject.text.toLowerCase().includes("maaf")) {
+                const responseText = aiResponseObject.text;
+                const title = `${enableGrounding ? 'Info' : 'Chat'}: ${promptForAI.substring(0, 40)}${promptForAI.length > 40 ? '...' : ''}`;
+                const description = responseText.substring(0, 100) + (responseText.length > 100 ? '...' : '');
+
+                results.push({
+                    type: 'article',
+                    id: `${command}_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+                    title: title,
+                    description: description,
+                    input_message_content: {
+                        message_text: responseText,
+                        disable_web_page_preview: true
+                    },
+                });
+                console.log(`Prepared InlineQueryResultArticle for query ID ${inlineQueryId}`);
+            } else {
+                errorMessageForResult = aiResponseObject.text || `Gagal mendapatkan respons ${command}.`;
+                console.warn(`AI response failed or contained error for inline query ID ${inlineQueryId}: ${errorMessageForResult}`);
+                 switchPmText = errorMessageForResult.substring(0, 60) + (errorMessageForResult.length > 60 ? "..." : "");
+                 switchPmParam = 'inline_ai_error';
+            }
+        }
+        else if (command === 'img') {
+            console.log(`Generating image for inline query ID ${inlineQueryId}...`);
 
             results.push({
                 type: 'article',
-                id: `${command}_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-                title: title,
-                description: description,
+                id: `img_request_${Date.now()}`,
+                title: `Buat gambar: ${promptForAI.substring(0,40)}...`,
+                description: "Pilih ini untuk meminta gambar (hasil akan dikirim via chat pribadi).",
                 input_message_content: {
-                    message_text: responseText,
-                    disable_web_page_preview: true
+                    message_text: `Oke, saya coba buatkan gambar "${promptForAI}". Tunggu sebentar ya... (Hasil mungkin akan dikirim lewat chat pribadi jika ini inline)`
                 },
             });
-            console.log(`Prepared InlineQueryResultArticle for query ID ${inlineQueryId}`);
-        } else {
-            errorMessageForResult = aiResponseObject.text || `Gagal mendapatkan respons ${command}.`;
-            console.warn(`AI response failed or contained error for inline query ID ${inlineQueryId}: ${errorMessageForResult}`);
+             console.log(`Prepared InlineQueryResultArticle placeholder for image request ID ${inlineQueryId}`);
         }
 
     } catch (error) {
         console.error(`Error processing inline query ID ${inlineQueryId} ("${query}"):`, error);
         errorMessageForResult = "Waduh, ada masalah internal pas proses permintaanmu.";
+        switchPmText = errorMessageForResult;
+        switchPmParam = 'inline_internal_error';
     }
 
-    if (errorMessageForResult && results.length === 0) {
-        results.push({
-            type: 'article',
-            id: `error_${Date.now()}`,
-            title: "Error",
-            description: errorMessageForResult.substring(0, 100),
-            input_message_content: { message_text: errorMessageForResult }
-        });
-        console.log(`Prepared error message as InlineQueryResultArticle for query ID ${inlineQueryId}`);
+    if (errorMessageForResult && results.length === 0 && !switchPmText) {
+         switchPmText = errorMessageForResult.substring(0, 60) + (errorMessageForResult.length > 60 ? "..." : "");
+         switchPmParam = 'inline_fallback_error';
+         console.log(`Using switch_pm for error message for query ID ${inlineQueryId}`);
     }
 
-    return answerInlineQuery(inlineQueryId, results, res);
+    return answerInlineQuery(inlineQueryId, results, res, switchPmText, switchPmParam);
 }
 
-async function answerInlineQuery(inlineQueryId, results, res, switchPmText = null, switchPmParameter = 'inline_help') {
+async function answerInlineQuery(inlineQueryId, results, res, switchPmText = null, switchPmParameter = 'inline_info') {
     const payload = {
         inline_query_id: inlineQueryId,
         results: results,
-        cache_time: 5 
+        cache_time: 5
     };
 
     if (switchPmText) {
-        payload.switch_pm_text = switchPmText;
-        payload.switch_pm_parameter = switchPmParameter;
+        payload.switch_pm_text = switchPmText.substring(0, 64);
+        payload.switch_pm_parameter = switchPmParameter.substring(0, 64);
     }
 
     try {
         await axios.post(`${TELEGRAM_API}/answerInlineQuery`, payload);
-        console.log(`Answered inline query ${inlineQueryId} with ${results.length} results.` + (switchPmText ? ` Switch PM: "${switchPmText}"` : ''));
+        console.log(`Answered inline query ${inlineQueryId} with ${results.length} results.` + (switchPmText ? ` Switch PM: "${payload.switch_pm_text}" (${payload.switch_pm_parameter})` : ''));
         if (!res.headersSent) {
              res.status(200).send('OK');
         }
@@ -625,66 +665,12 @@ async function answerInlineQuery(inlineQueryId, results, res, switchPmText = nul
     }
 }
 
-// --- Akhir Handler Inline Query ---
 
-// --- Inline Gambar ---
-async function generateImageForInlineQuery(prompt) {
-    try {
-        const imageResult = await generateImageWithGemini(null, prompt, 'Inline User'); 
-
-        if (imageResult.error) {
-            console.warn(`Image generation failed for inline query "${prompt}": ${imageResult.error}`);
-            return { error: imageResult.error };
-        }
-
-        if (imageResult.base64Data && imageResult.mimeType) {
-            console.log(`Image generated successfully for inline query "${prompt}"`);
-            return { base64Data: imageResult.base64Data, mimeType: imageResult.mimeType };
-        } else {
-            console.error(`Unexpected result from generateImageWithGemini for inline query "${prompt}"`);
-            return { error: 'Gagal membuat gambar.' };
-        }
-    } catch (error) {
-        console.error(`Error in generateImageForInlineQuery:`, error);
-        return { error: 'Terjadi kesalahan saat memproses permintaan.' };
-    }
-}
-// --- Akhir Gambar ---
-
-// --- Pengembalian ---
-
-async function answerInlineQuery(inlineQueryId, results, res, switchPmText = null, switchPmParameter = 'inline_error') {
-    const payload = {
-        inline_query_id: inlineQueryId,
-        results: results,
-        cache_time: 10 
-    };
-
-    if (switchPmText) {
-        payload.switch_pm_text = switchPmText;
-        payload.switch_pm_parameter = switchPmParameter;
-    }
-
-    try {
-       
-        await axios.post(`${TELEGRAM_API}/answerInlineQuery`, payload);
-        console.log(`Answered inline query ${inlineQueryId} with ${results.length} results.`);
-        if (!res.headersSent) { 
-             res.status(200).send('OK');
-        }
-    } catch (error) {
-        console.error(`Error answering inline query ${inlineQueryId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        if (!res.headersSent) { 
-            res.status(500).send('Error answering query');
-        }
-    }
-}
-
-// --- Akhir Pengembalian ---
-
-// --- Handler Utama Vercel ---
 module.exports = async (req, res) => {
-    if (req.method !== 'POST') { return res.status(405).json({ error: 'Method Not Allowed' }); }
+    if (req.method !== 'POST') {
+        console.log('Received non-POST request.');
+        return res.status(405).json({ error: 'Method Not Allowed' });
+    }
     if (!req.body || typeof req.body !== 'object') {
         console.log('Received invalid or empty request body.');
         return res.status(200).send('OK - Invalid body');
@@ -695,13 +681,22 @@ module.exports = async (req, res) => {
 
     if (update.inline_query) {
         await handleInlineQuery(update.inline_query, res);
-        return;  
+        return;
     }
+
+    if (update.chosen_inline_result) {
+        const { result_id, from, query } = update.chosen_inline_result;
+        const userId = from.id;
+        const name = from.first_name || from.username || userId;
+        console.log(`User ${name} (${userId}) chose inline result ID: ${result_id} for query: "${query}"`);
+        return res.status(200).send('OK - ChosenInlineResult logged');
+    }
+
 
     if (update.message && update.message.chat && update.message.from) {
         const chatId = update.message.chat.id;
         const message = update.message;
-        const messageText = (message.text || "").trim();
+        const messageText = (message.text || message.caption || "").trim();
         const chatType = message.chat.type;
         const messageId = message.message_id;
         const userId = message.from.id;
@@ -728,6 +723,7 @@ module.exports = async (req, res) => {
         const chatTriggers = ['/chat ', 'lele ', 'le ', 'tanya '];
         const groundingTriggers = ['/info ', 'inpo ', 'kabar ', '/po '];
         const imageTriggers = ['/img ', 'img ', 'buat ', 'gambar '];
+
 
         let imageTriggerFound = false;
         for (const trigger of imageTriggers) {
@@ -759,76 +755,137 @@ module.exports = async (req, res) => {
                 return res.status(200).send('OK');
             }
 
-            if (repliedToMessage?.photo?.length > 0 && messageText) {
-                console.log(`Detected reply to photo by ${nameForAIContext} (${userId}). Checking text trigger...`);
-                let visionTriggerFound = false;
-                for (const trigger of chatTriggers) {
-                    if (lowerCaseText.startsWith(trigger)) {
-                        visionTriggerFound = true;
-                        triggerWordUsed = `vision_${trigger.trim()}`;
-                        promptForAI = messageText.substring(trigger.length).trim();
-                        console.log(`Vision trigger '${trigger.trim()}' found in reply text.`);
 
-                        try {
-                            await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'typing' });
-                            const photo = repliedToMessage.photo[repliedToMessage.photo.length - 1];
-                            const fileId = photo.file_id;
-                            console.log(`Getting file path for file_id: ${fileId}`);
-                            const getFileResponse = await axios.get(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
-                            const filePath = getFileResponse.data?.result?.file_path;
-                            if (!filePath) { throw new Error('File path not found.'); }
-                            console.log(`Got file path: ${filePath}`);
-                            const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-                            console.log(`Downloading image from: ${fileUrl}`);
-                            const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-                            imageBase64 = Buffer.from(imageResponse.data).toString('base64');
-                            if (filePath.toLowerCase().endsWith('.png')) { imageMimeType = 'image/png'; }
-                            else if (filePath.toLowerCase().endsWith('.webp')) { imageMimeType = 'image/webp'; }
-                            else { imageMimeType = 'image/jpeg'; }
-                            console.log(`Image downloaded (${(imageBase64.length * 3/4 / 1024).toFixed(2)} KB) and encoded. MimeType: ${imageMimeType}`);
-                            shouldProcessAI = true;
-                            enableGrounding = false;
-                        } catch (error) {
-                            console.error(`Error fetching/processing image for vision request (file_id: ${fileId}):`, error.message);
-                            await sendMessage(chatId, `Waduh ${nameForBotGreeting}, gagal ngambil/proses gambarnya nih. Coba lagi ya.`, messageId);
-                            shouldProcessAI = false;
-                            visionTriggerFound = false;
-                        }
-                        break;
+             const photoInRepliedMessage = repliedToMessage?.photo?.length > 0 ? repliedToMessage.photo[repliedToMessage.photo.length - 1] : null;
+            const photoInCurrentMessage = message?.photo?.length > 0 ? message.photo[message.photo.length - 1] : null;
+            const photoToProcess = photoInCurrentMessage || photoInRepliedMessage;
+
+            if (photoToProcess && messageText) {
+                console.log(`Detected photo (ID: ${photoToProcess.file_id}) with text by ${nameForAIContext} (${userId}). Checking text trigger...`);
+                let visionTriggerFound = false;
+
+                 for (const trigger of chatTriggers) {
+                    if (lowerCaseText.startsWith(trigger)) {
+                         visionTriggerFound = true;
+                         triggerWordUsed = `vision_${trigger.trim()}`;
+                         promptForAI = messageText.substring(trigger.length).trim();
+                         console.log(`Vision trigger '${trigger.trim()}' found with photo.`);
+                         break;
+                     }
+                 }
+
+                 if (!visionTriggerFound && messageText && photoInCurrentMessage) {
+                     visionTriggerFound = true;
+                     triggerWordUsed = 'vision_caption';
+                     promptForAI = messageText;
+                     console.log(`Using caption/text as prompt for photo.`);
+                 }
+                  else if (!visionTriggerFound && messageText && photoInRepliedMessage) {
+                    for (const trigger of chatTriggers) {
+                         if (lowerCaseText.startsWith(trigger)) {
+                             visionTriggerFound = true;
+                             triggerWordUsed = `vision_reply_${trigger.trim()}`;
+                             promptForAI = messageText.substring(trigger.length).trim();
+                             console.log(`Vision trigger '${trigger.trim()}' found in reply to photo.`);
+                             messageIdToReply = repliedToMessage.message_id;
+                             break;
+                         }
+                     }
+                  }
+
+
+                if (visionTriggerFound) {
+                    try {
+                        await axios.post(`${TELEGRAM_API}/sendChatAction`, { chat_id: chatId, action: 'typing' });
+
+                        const fileId = photoToProcess.file_id;
+                        console.log(`Getting file path for file_id: ${fileId}`);
+                        const getFileResponse = await axios.get(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
+                        const filePath = getFileResponse.data?.result?.file_path;
+
+                        if (!filePath) { throw new Error('File path not found in Telegram response.'); }
+                        console.log(`Got file path: ${filePath}`);
+
+                        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+                        console.log(`Downloading image from: ${fileUrl}`);
+                        const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer', timeout: 30000 });
+
+                        imageBase64 = Buffer.from(imageResponse.data).toString('base64');
+
+                        if (filePath.toLowerCase().endsWith('.png')) { imageMimeType = 'image/png'; }
+                        else if (filePath.toLowerCase().endsWith('.webp')) { imageMimeType = 'image/webp'; }
+                        else if (filePath.toLowerCase().endsWith('.gif')) { imageMimeType = 'image/gif'; }
+                        else { imageMimeType = 'image/jpeg'; }
+
+                        console.log(`Image downloaded (${(imageBase64.length * 3/4 / 1024).toFixed(2)} KB) and encoded. MimeType: ${imageMimeType}`);
+                        shouldProcessAI = true;
+                        enableGrounding = false;
+
+                    } catch (error) {
+                        console.error(`Error fetching/processing image for vision request (file_id: ${fileId}):`, error.message);
+                        await sendMessage(chatId, `Waduh ${nameForBotGreeting}, gagal ngambil/proses gambarnya nih. Coba lagi ya (${error.code || error.message}).`, messageId);
+                        shouldProcessAI = false;
+                        visionTriggerFound = false;
                     }
-                }
-                if (!visionTriggerFound && messageText) {
-                    console.log(`Ignoring reply to photo from ${nameForAIContext} (${userId}) because text does not start with a valid chat trigger.`);
+                } else {
+                    console.log(`Ignoring photo message from ${nameForAIContext} (${userId}) because text does not start with a valid chat trigger or isn't a caption.`);
                 }
             }
 
+            // Start Block for Grounding Trigger Check (Modified Part)
             if (!shouldProcessAI) {
                 enableGrounding = false;
                 let groundingTriggerFound = false;
                 for (const trigger of groundingTriggers) {
                     if (lowerCaseText.startsWith(trigger)) {
                         triggerWordUsed = trigger.trim();
-                        promptForAI = messageText.substring(trigger.length).trim();
-                        if (promptForAI) {
+
+                        let potentialPrompt = messageText.substring(trigger.length).trim();
+
+                        if (!potentialPrompt) {
+                            await sendMessage(chatId, `Iya ${nameForBotGreeting}, mau cari ${triggerWordUsed} apa? Contoh: ${triggerWordUsed} berita terkini tentang AI`, messageIdToReply);
+                            shouldProcessAI = false;
+                            groundingTriggerFound = true;
+                            break;
+                        }
+
+                        if (repliedToMessage && repliedToMessage.text && repliedToMessage.from?.id !== BOT_USER_ID) {
+                            const repliedText = repliedToMessage.text;
+                            let originalSenderName = 'seseorang';
+                            const repliedFrom = repliedToMessage.from;
+                            if (repliedFrom) {
+                                const repliedUsername = repliedFrom.username ? repliedFrom.username.toLowerCase() : null;
+                                const repliedNickname = repliedUsername ? userNicknames[repliedUsername] : null;
+                                originalSenderName = repliedNickname || repliedFrom.first_name || (repliedFrom.username ? `@${repliedFrom.username}` : `User ${repliedFrom.id}`);
+                            }
+                            promptForAI = `Berikut adalah pesan dari ${originalSenderName}: "${repliedText}"\n\nTanggapi permintaan informasi saya (${nameForAIContext}) terkait pesan itu: "${potentialPrompt}"`;
+                            console.log(`Added context from replied text message ${repliedToMessage.message_id} for GROUNDING request.`);
+                            messageIdToReply = repliedToMessage.message_id;
                             shouldProcessAI = true;
                             enableGrounding = true;
                             groundingTriggerFound = true;
-                            console.log(`Processing TEXT message ${messageId} WITH grounding (Trigger: '${triggerWordUsed}') from ${nameForAIContext} (${userId})`);
                         } else {
-                            await sendMessage(chatId, `Iya ${nameForBotGreeting}, mau cari ${triggerWordUsed} apa? Contoh: ${triggerWordUsed} berita terkini tentang AI`, messageIdToReply);
-                            shouldProcessAI = false;
+                            promptForAI = potentialPrompt;
+                            shouldProcessAI = true;
+                            enableGrounding = true;
+                            groundingTriggerFound = true;
+                            console.log(`Processing TEXT message ${messageId} WITH grounding (Trigger: '${triggerWordUsed}') from ${nameForAIContext} (${userId}) - NO reply context`);
                         }
+
                         break;
                     }
                 }
 
+                 // Continue with chat triggers / private / group logic ONLY if grounding trigger wasn't found/processed
                 if (!groundingTriggerFound && !shouldProcessAI) {
+                     // --- Handle Private Chat ---
                     if (chatType === 'private') {
                          if (messageText) {
                             shouldProcessAI = true;
                             promptForAI = messageText;
                             triggerWordUsed = 'private_chat';
                             enableGrounding = false;
+
                             if (lowerCaseText.startsWith("cari info ") || lowerCaseText.startsWith("inpo ")) {
                                  const query = messageText.substring(messageText.indexOf(" ") + 1).trim();
                                  if(query) {
@@ -836,6 +893,8 @@ module.exports = async (req, res) => {
                                     enableGrounding = true;
                                     triggerWordUsed = 'private_grounding';
                                     console.log(`Processing private message ${messageId} WITH grounding (Implicit trigger) from ${nameForAIContext} (${userId})`);
+                                 } else {
+                                     console.log(`Implicit grounding keyword used in private chat but no query. Proceeding without grounding.`);
                                  }
                             } else {
                                  console.log(`Processing private message ${messageId} (no grounding) from ${nameForAIContext} (${userId})`);
@@ -844,8 +903,11 @@ module.exports = async (req, res) => {
                              console.log(`Ignoring empty private message ${messageId} from ${nameForAIContext} (${userId})`);
                              shouldProcessAI = false;
                         }
-                    } else if (chatType === 'group' || chatType === 'supergroup') {
+                    }
+                    // --- Handle Group/Supergroup Chat ---
+                    else if (chatType === 'group' || chatType === 'supergroup') {
                         let textTriggerFound = false;
+
                         if (messageText) {
                              for (const trigger of chatTriggers) {
                                 if (lowerCaseText.startsWith(trigger)) {
@@ -857,29 +919,24 @@ module.exports = async (req, res) => {
                             }
                         }
 
-                        if (!textTriggerFound && BOT_USER_ID && repliedToMessage?.from?.id === BOT_USER_ID && repliedToMessage.text) {
-                              if (!repliedToMessage.photo) {
-                                   triggerWordUsed = 'reply_to_bot_text';
-                                   const botPreviousText = repliedToMessage.text;
-                                   const userReplyText = messageText;
+                        if (!textTriggerFound && BOT_USER_ID && repliedToMessage?.from?.id === BOT_USER_ID && repliedToMessage.text && !repliedToMessage.photo) {
+                              triggerWordUsed = 'reply_to_bot_text';
+                              const botPreviousText = repliedToMessage.text;
+                              const userReplyText = messageText;
 
-                                   let history = chatHistories[chatId] || [];
-                                   const lastBotTurnIndex = history.map(h => h.role).lastIndexOf('model');
+                              let history = chatHistories[chatId] || [];
+                              const lastBotTurnIndex = history.map(h => h.role).lastIndexOf('model');
 
-                                   if(lastBotTurnIndex !== -1 && history[lastBotTurnIndex].parts[0].text.includes(botPreviousText.substring(0, 50))) {
-                                        promptForAI = userReplyText;
-                                        console.log(`Continuing conversation based on reply to bot message ${repliedToMessage.message_id}`);
-                                   } else {
-                                        console.warn(`Could not find matching bot turn in history for reply ${repliedToMessage.message_id}. Creating manual context.`);
-                                        promptForAI = `Ini adalah respons saya sebelumnya: "${botPreviousText}"\n\nSekarang tanggapi ini dari ${nameForAIContext}: "${userReplyText}"`;
-                                        if(history.length > 2) {
-                                            const systemPrompts = history.filter(h => h.role === 'system');
-                                            chatHistories[chatId] = systemPrompts;
-                                            console.warn(`Resetting history for chat ${chatId} due to potential context mismatch.`);
-                                        }
-                                   }
-                                   textTriggerFound = true;
+                              if(lastBotTurnIndex !== -1 && history[lastBotTurnIndex].parts[0].text.includes(botPreviousText.substring(0, 50))) {
+                                   promptForAI = userReplyText;
+                                   console.log(`Continuing conversation based on reply to bot message ${repliedToMessage.message_id}`);
+                              } else {
+                                   console.warn(`Could not reliably find matching bot turn in history for reply ${repliedToMessage.message_id}. Creating manual context.`);
+                                   promptForAI = `Ini adalah respons saya sebelumnya: "${botPreviousText}"\n\nSekarang tanggapi ini dari ${nameForAIContext}: "${userReplyText}"`;
                               }
+                              textTriggerFound = true;
+                              shouldProcessAI = true;
+                              enableGrounding = false;
                          }
 
                         if (textTriggerFound && triggerWordUsed !== 'reply_to_bot_text' && repliedToMessage && repliedToMessage.text && repliedToMessage.from?.id !== BOT_USER_ID) {
@@ -892,11 +949,11 @@ module.exports = async (req, res) => {
                                  originalSenderName = repliedNickname || repliedFrom.first_name || (repliedFrom.username ? `@${repliedFrom.username}` : `User ${repliedFrom.id}`);
                               }
                              promptForAI = `Berikut adalah pesan dari ${originalSenderName}: "${repliedText}"\n\nTanggapi pesan tersebut dengan memperhatikan pertanyaan/pernyataan saya (${nameForAIContext}) berikut: "${promptForAI}"`;
-                             console.log(`Added context from replied text message ${repliedToMessage.message_id}`);
+                             console.log(`Added context from replied text message ${repliedToMessage.message_id} for CHAT request.`);
                              messageIdToReply = repliedToMessage.message_id;
                          }
 
-                        if (textTriggerFound && promptForAI) {
+                        if (textTriggerFound && promptForAI && !shouldProcessAI) {
                             shouldProcessAI = true;
                             enableGrounding = false;
                             console.log(`Trigger TEXT '${triggerWordUsed}' activated (no grounding) for message ${messageId} in group ${chatId} by ${nameForAIContext} (${userId})`);
@@ -905,36 +962,39 @@ module.exports = async (req, res) => {
                             await sendMessage(chatId, helpText, messageIdToReply);
                             shouldProcessAI = false;
                         } else if (!textTriggerFound && messageText) {
-                             if (!(repliedToMessage && repliedToMessage.photo)) {
+                             if (!photoToProcess) {
                                 console.log(`Ignoring non-trigger text message ${messageId} in group chat ${chatId} from ${nameForAIContext} (${userId})`);
                              }
                              shouldProcessAI = false;
                          }
                     }
-                     else if (!messageText && !repliedToMessage?.photo) {
-                        console.log(`Ignoring message ${messageId} in chat ${chatId} because it has no text content and is not a reply to a photo.`);
+                     else if (!messageText && !photoToProcess) {
+                        console.log(`Ignoring message ${messageId} in chat ${chatId} because it has no text/photo content.`);
                         shouldProcessAI = false;
                     }
                      else {
-                         if (!(repliedToMessage && repliedToMessage.photo)) {
+                         if (!photoToProcess) {
                             console.log(`Ignoring message from unsupported chat type: ${chatType} or unhandled condition.`);
                          }
                         shouldProcessAI = false;
                     }
-                }
-            }
+                } // End of if (!groundingTriggerFound && !shouldProcessAI)
+            } // End of if (!shouldProcessAI) checking after vision attempt
+            // End Block for Grounding Trigger Check
+
         }
+
 
         if (shouldProcessAI) {
              const effectivePromptLength = (promptForAI || "").length + (imageBase64 ? imageBase64.length : 0);
-             const MAX_EFFECTIVE_PROMPT = 4 * 1024 * 1024;
+             const MAX_EFFECTIVE_PROMPT_BYTES = 4 * 1024 * 1024;
 
-             console.log(`Effective TEXT/VISION prompt/image size: ${effectivePromptLength} bytes (Limit: ${MAX_EFFECTIVE_PROMPT})`);
+             console.log(`Effective TEXT/VISION prompt/image size: ${Math.round(effectivePromptLength / 1024)} KB (Limit: ${MAX_EFFECTIVE_PROMPT_BYTES / 1024 / 1024} MB)`);
 
-             if (effectivePromptLength > MAX_EFFECTIVE_PROMPT) {
-                 await sendMessage(chatId, `Waduh ${nameForBotGreeting}, permintaannya (${triggerWordUsed}) terlalu besar nih (prompt/gambar > ${(MAX_EFFECTIVE_PROMPT / 1024 / 1024).toFixed(1)} MB). Coba dipersingkat atau pakai gambar lebih kecil ya.`, messageIdToReply);
+             if (effectivePromptLength > MAX_EFFECTIVE_PROMPT_BYTES) {
+                 await sendMessage(chatId, `Waduh ${nameForBotGreeting}, permintaannya (${triggerWordUsed}) terlalu besar nih (prompt/gambar > ${(MAX_EFFECTIVE_PROMPT_BYTES / 1024 / 1024).toFixed(1)} MB). Coba dipersingkat atau pakai gambar lebih kecil ya.`, messageIdToReply);
              } else if (!promptForAI && !imageBase64) {
-                  console.warn(`shouldProcessAI is true but both prompt and image are missing for chat ${chatId}, message ${messageId}. Skipping.`);
+                  console.warn(`shouldProcessAI is true but both prompt and image are missing for chat ${chatId}, message ${messageId}. Skipping AI call.`);
              } else {
                  if (!imageBase64) {
                      try {
@@ -950,6 +1010,7 @@ module.exports = async (req, res) => {
                      imageBase64,
                      imageMimeType
                  );
+
                  await sendMessage(chatId, aiResponseObject.text, messageIdToReply);
              }
         }
@@ -961,22 +1022,21 @@ module.exports = async (req, res) => {
             const imageResult = await generateImageWithGemini(chatId, promptForAI, nameForAIContext);
 
             if (imageResult.base64Data && imageResult.mimeType) {
-                const caption = `📷 Jika gambarnya aneh, harap dihapus yaa 🙏😭 \n\nbingung cari prompt? kesini aja https://poe.com/prompt-img-lele
-                `;
+                const caption = `Ini gambarnya, ${nameForBotGreeting}! Diminta oleh ${nameForAIContext}.\nPrompt: ${promptForAI.substring(0, 150)}${promptForAI.length > 150 ? '...' : ''}${imageResult.textFallback ? `\n\n${imageResult.textFallback}` : ''}`;
                 await sendPhotoFromBase64(chatId, imageResult.base64Data, imageResult.mimeType, caption, messageIdToReply);
             } else {
                 await sendMessage(chatId, imageResult.error || `Waduh ${nameForBotGreeting}, gagal bikin gambarnya nih, coba lagi nanti ya.`, messageIdToReply);
             }
         }
-        // --- Akhir Proses Image Generation ---
 
     } else if (update.message && update.message.chat) {
         const chatId = update.message.chat.id;
-        console.log(`Ignoring non-text/photo/incomplete message update in chat ${chatId || 'unknown'}`);
-    } else {
-        console.log('Ignoring update that is not a message or lacks required fields.');
+        console.log(`Ignoring non-text/photo/caption/incomplete message update in chat ${chatId || 'unknown'}`);
+    } else if (!update.inline_query && !update.chosen_inline_result) {
+        console.log('Ignoring update that is not a message, inline query, or chosen inline result.');
     }
 
-    res.status(200).send('OK');
+    if (!res.headersSent) {
+        res.status(200).send('OK');
+    }
 };
-// --- Akhir Handler Utama Vercel ---
