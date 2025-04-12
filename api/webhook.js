@@ -802,48 +802,54 @@ module.exports = async (req, res) => {
                 }
             }
 
-            if (!shouldProcessAI) {
+            if (!shouldProcessAI) { // Hanya proses jika belum ditangani oleh vision/image
                 enableGrounding = false;
                 let groundingTriggerFound = false;
                 for (const trigger of groundingTriggers) {
                     if (lowerCaseText.startsWith(trigger)) {
                         triggerWordUsed = trigger.trim();
-                        promptForAI = messageText.substring(trigger.length).trim();
-                        if (promptForAI) {
-                            shouldProcessAI = true;
-                            enableGrounding = true;
-                            groundingTriggerFound = true;
-                            console.log(`Processing TEXT message ${messageId} WITH grounding (Trigger: '${triggerWordUsed}') from ${nameForAIContext} (${userId})`);
-                        } else {
-                            await sendMessage(chatId, `Iya ${nameForBotGreeting}, mau cari ${triggerWordUsed} apa? Contoh: ${triggerWordUsed} berita terkini tentang AI`, messageIdToReply);
-                            shouldProcessAI = false;
-                        }
-                        break;
-                    }
-                }
 
-                if (repliedToMessage && repliedToMessage.text && repliedToMessage.from?.id !== BOT_USER_ID) {
-                    const repliedText = repliedToMessage.text;
-                    let originalSenderName = 'seseorang';
-                    const repliedFrom = repliedToMessage.from;
-                    if (repliedFrom) {
-                        const repliedUsername = repliedFrom.username ? repliedFrom.username.toLowerCase() : null;
-                        const repliedNickname = repliedUsername ? userNicknames[repliedUsername] : null;
-                        originalSenderName = repliedNickname || repliedFrom.first_name || (repliedFrom.username ? `@${repliedFrom.username}` : `User ${repliedFrom.id}`);
+                        // --- PERBAIKAN: Deklarasi potentialPrompt DI SINI, SEBELUM digunakan ---
+                        let potentialPrompt = messageText.substring(trigger.length).trim();
+                        // --- AKHIR PERBAIKAN ---
+
+                        // Sekarang cek apakah potentialPrompt kosong
+                        if (!potentialPrompt) {
+                            // Jika tidak ada teks setelah trigger, kirim pesan bantuan
+                            await sendMessage(chatId, `Iya ${nameForBotGreeting}, mau cari ${triggerWordUsed} apa? Contoh: ${triggerWordUsed} berita terkini tentang AI`, messageIdToReply);
+                            shouldProcessAI = false; // Jangan proses AI jika prompt kosong
+                            groundingTriggerFound = true; // Anggap trigger ditemukan untuk menghentikan pengecekan lain
+                            break; // Keluar loop
+                        }
+
+                        // Cek apakah ini balasan ke pesan teks lain
+                        if (repliedToMessage && repliedToMessage.text && repliedToMessage.from?.id !== BOT_USER_ID) {
+                            const repliedText = repliedToMessage.text;
+                            let originalSenderName = 'seseorang';
+                            const repliedFrom = repliedToMessage.from;
+                            if (repliedFrom) {
+                                const repliedUsername = repliedFrom.username ? repliedFrom.username.toLowerCase() : null;
+                                const repliedNickname = repliedUsername ? userNicknames[repliedUsername] : null;
+                                originalSenderName = repliedNickname || repliedFrom.first_name || (repliedFrom.username ? `@${repliedFrom.username}` : `User ${repliedFrom.id}`);
+                            }
+                            // Gabungkan konteks balasan dengan prompt pengguna
+                            promptForAI = `Berikut adalah pesan dari ${originalSenderName}: "${repliedText}"\n\nTanggapi permintaan informasi saya (${nameForAIContext}) terkait pesan itu: "${potentialPrompt}"`; // Gunakan potentialPrompt di sini
+                            console.log(`Added context from replied text message ${repliedToMessage.message_id} for GROUNDING request.`);
+                            messageIdToReply = repliedToMessage.message_id; // Balas ke pesan asli
+                            shouldProcessAI = true;
+                            enableGrounding = true; // Aktifkan grounding
+                            groundingTriggerFound = true;
+                        } else {
+                            // Jika bukan balasan (atau balasan ke non-teks/bot), gunakan prompt biasa
+                            promptForAI = potentialPrompt; // Gunakan potentialPrompt di sini
+                            shouldProcessAI = true;
+                            enableGrounding = true; // Aktifkan grounding
+                            groundingTriggerFound = true;
+                            console.log(`Processing TEXT message ${messageId} WITH grounding (Trigger: '${triggerWordUsed}') from ${nameForAIContext} (${userId}) - NO reply context`);
+                        }
+
+                        break; // Keluar dari loop setelah trigger ditemukan dan diproses
                     }
-                   
-                    promptForAI = `Berikut adalah pesan dari ${originalSenderName}: "${repliedText}"\n\nTanggapi permintaan informasi saya (${nameForAIContext}) terkait pesan itu: "${potentialPrompt}"`;
-                    console.log(`Added context from replied text message ${repliedToMessage.message_id} for GROUNDING request.`);
-                    messageIdToReply = repliedToMessage.message_id; 
-                    shouldProcessAI = true;
-                    enableGrounding = true; 
-                    groundingTriggerFound = true;
-                } else {
-                    promptForAI = potentialPrompt;
-                    shouldProcessAI = true;
-                    enableGrounding = true; 
-                    groundingTriggerFound = true;
-                    console.log(`Processing TEXT message ${messageId} WITH grounding (Trigger: '${triggerWordUsed}') from ${nameForAIContext} (${userId}) - NO reply context`);
                 }
 
                 if (!groundingTriggerFound && !shouldProcessAI) {
