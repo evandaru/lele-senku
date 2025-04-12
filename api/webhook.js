@@ -350,119 +350,129 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
     }
 }
 
-// --- Fungsi BARU: generateImageWithGemini ---
-    // --- Fungsi BARU: generateImageWithGemini ---
-    async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
-        if (!GEMINI_API_KEY) {
-            console.error("Gemini API key is not set for image generation.");
-            return { error: `Maaf ${userName}, konfigurasi AI untuk gambar belum diatur.` };
-        }
-        if (!GEMINI_IMAGE_MODEL_NAME) {
-            console.error("Gemini Image Model Name is not set.");
-            return { error: `Maaf ${userName}, model AI untuk gambar belum ditentukan.` };
-        }
-        if (!prompt || prompt.trim().length === 0) {
-            console.log(`Image generation skipped for chat ${chatId} due to empty prompt.`);
-            return { error: `Mau gambar apa, ${userName}? Kasih tau dong. Contoh: /img kucing astronot` };
-        }
-
-        const modelToUse = GEMINI_IMAGE_MODEL_NAME;
-        const apiUrl = `${GEMINI_API_URL_BASE}${modelToUse}:generateContent?key=${GEMINI_API_KEY}`;
-
-        console.log(`Calling Gemini Image API (${modelToUse}) for chat ${chatId}. User: ${userName}. Prompt: "${prompt}"`);
-
-        const requestBody = {
-            contents: [{
-                role: "user",
-                parts: [{ text: prompt }]
-            }],
-            generationConfig: {
-                responseModalities: ["TEXT", "IMAGE"],
-                temperature: 0.3,
-            },
-
-        };
-
-        try {
-            const response = await axios.post(apiUrl, requestBody, {
-                headers: { 'Content-Type': 'application/json' },
-                timeout: 180000
-            });
-
-            const candidate = response.data?.candidates?.[0];
-
-            if (!candidate) {
-                console.error(`Gemini Image response missing candidates for chat ${chatId}.`, JSON.stringify(response.data, null, 2));
-                return { error: `Waduh ${userName}, AI nggak ngasih hasil gambar nih. Coba lagi ya.` };
-            }
-
-            if (candidate.finishReason && candidate.finishReason !== 'STOP') {
-                console.warn(`Gemini Image response for chat ${chatId} finished with reason: ${candidate.finishReason}. Checking for partial content.`);
-                const imagePart = candidate.content?.parts?.find(part => part.inlineData);
-                if (imagePart?.inlineData?.data) {
-                    console.log(`Image found despite finish reason ${candidate.finishReason} for chat ${chatId}. Proceeding.`);
-                    return {
-                        base64Data: imagePart.inlineData.data,
-                        mimeType: imagePart.inlineData.mimeType,
-                        textFallback: `(Gambar berhasil dibuat, tapi ada peringatan: ${candidate.finishReason})`
-                    };
-                } else {
-                    console.error(`Gemini Image generation blocked for chat ${chatId}. Reason: ${candidate.finishReason}`);
-                    const safetyRatings = candidate.safetyRatings ? ` (${candidate.safetyRatings.map(r => r.category + ':' + r.probability).join(', ')})` : '';
-                    return { error: `Waduh ${userName}, gambar mu sus ;-;, generate yang lainnya` };
-                }
-            }
-
-            const imagePart = candidate.content?.parts?.find(part => part.inlineData);
-
-            if (imagePart?.inlineData?.data && imagePart?.inlineData?.mimeType) {
-                console.log(`Image successfully generated for chat ${chatId}. MimeType: ${imagePart.inlineData.mimeType}`);
-                const textPart = candidate.content?.parts?.find(part => part.text);
-                const textFallback = textPart ? stripMarkdown(textPart.text) : null;
-
-                return {
-                    base64Data: imagePart.inlineData.data,
-                    mimeType: imagePart.inlineData.mimeType,
-                    textFallback: textFallback
-                };
-            } else {
-                const textPart = candidate.content?.parts?.find(part => part.text);
-                if (textPart?.text) {
-                    console.warn(`Gemini Image API (${modelToUse}) returned text instead of image for chat ${chatId}: "${textPart.text.substring(0, 100)}..."`);
-                    return { error: `Hmm ${userName}, Gambar mu sus coba ganti prompt` };
-                } else {
-                    console.error(`Gemini Image response format unexpected or missing image data for chat ${chatId}.`, JSON.stringify(response.data, null, 2));
-                    return { error: `Waduh ${userName}, gambar mu sus ;-;` };
-                }
-            }
-
-        } catch (error) {
-            console.error(`Error calling Gemini Image API (${modelToUse}) for chat ${chatId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-            let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas bikin gambar pake AI. Coba lagi nanti ya.`;
-            if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI bikin gambarnya, coba lagi aja`; }
-            else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan minta gambar nih kayaknya pake , coba santai dulu bentar`; }
-            else if (error.response?.data?.error) {
-                const apiError = error.response.data.error;
-                errorMsg = `Error dari AI Gambar - ${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}`;
-                if (apiError.message && apiError.message.includes("API key not valid")) {
-                    errorMsg = `Waduh ${userName}, API Key Gemini sepertinya salah atau belum diatur nih. Cek konfigurasi ya.`;
-                } else if (apiError.message && apiError.message.includes("quota")) {
-                    errorMsg = `Aduh ${userName}, jatah bikin gambar habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
-                } else if (apiError.message && apiError.message.includes("Request payload size")) {
-                    errorMsg = `Waduh ${userName}, prompt gambarnya kepanjangan. Coba dipersingkat.`;
-                } else if (apiError.message && apiError.message.includes("response modalities")) {
-                    errorMsg = `Waduh ${userName}, model AI ini sepertinya nggak bisa generate gambar/teks sesuai permintaan. Mungkin modelnya salah? (${apiError.message})`;
-                } else if (apiError.message && apiError.message.includes("SAFETY")) {
-                    errorMsg = `Maaf ${userName}, gambarmu sus ;-; Coba prompt yang lebih aman ya. (${apiError.message})`;
-                }
-            } else if (error.response && error.response.status >= 500) {
-                errorMsg = `Aduh ${userName}, kayaknya server lagi ada masalah internal nih. Coba beberapa saat lagi.`;
-            }
-            return { error: errorMsg };
-        }
+// Fungsi generateImageWithGemini dengan perbaikan (tanpa responseMimeType di config)
+async function generateImageWithGemini(chatId, prompt, userName = 'mas') {
+    if (!GEMINI_API_KEY) {
+        console.error("Gemini API key is not set for image generation.");
+        return { error: `Maaf ${userName}, konfigurasi AI untuk gambar belum diatur.` };
     }
-    // --- Akhir Fungsi generateImageWithGemini ---
-// --- Akhir Fungsi generateImageWithGemini ---
+    if (!GEMINI_IMAGE_MODEL_NAME) {
+        console.error("Gemini Image Model Name is not set.");
+        return { error: `Maaf ${userName}, model AI untuk gambar belum ditentukan.` };
+    }
+     if (!prompt || prompt.trim().length === 0) {
+        console.log(`Image generation skipped for chat ${chatId} due to empty prompt.`);
+        return { error: `Mau gambar apa, ${userName}? Kasih tau dong. Contoh: /img kucing astronot` };
+    }
+
+    const modelToUse = GEMINI_IMAGE_MODEL_NAME;
+    const apiUrl = `${GEMINI_API_URL_BASE}${modelToUse}:generateContent?key=${GEMINI_API_KEY}`;
+
+    console.log(`Calling Gemini Image API (${modelToUse}) for chat ${chatId}. User: ${userName}. Prompt: "${prompt}"`);
+
+    const requestBody = {
+        contents: [{
+            role: "user",
+            parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+            // responseMimeType: "image/png", // <-- Baris ini dihapus
+            temperature: 0.3,
+        },
+    };
+
+    try {
+        const response = await axios.post(apiUrl, requestBody, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 180000
+        });
+
+        const candidate = response.data?.candidates?.[0];
+
+        if (!candidate) {
+             console.error(`Gemini Image response missing candidates for chat ${chatId}.`, JSON.stringify(response.data, null, 2));
+             return { error: `Waduh ${userName}, AI nggak ngasih hasil gambar nih. Coba lagi ya.` };
+        }
+
+        if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+            console.warn(`Gemini Image response for chat ${chatId} finished with reason: ${candidate.finishReason}. Checking for partial content.`);
+            const imagePart = candidate.content?.parts?.find(part => part.inlineData);
+            if (imagePart?.inlineData?.data && imagePart?.inlineData?.mimeType) {
+                 console.log(`Image found despite finish reason ${candidate.finishReason} for chat ${chatId}. Proceeding.`);
+                 return {
+                     base64Data: imagePart.inlineData.data,
+                     mimeType: imagePart.inlineData.mimeType,
+                     textFallback: `(Gambar berhasil dibuat, tapi ada peringatan: ${candidate.finishReason})`
+                 };
+            } else {
+                 console.error(`Gemini Image generation blocked for chat ${chatId}. Reason: ${candidate.finishReason}`);
+                 const safetyRatings = candidate.safetyRatings ? ` (${candidate.safetyRatings.map(r => r.category + ':'+r.probability).join(', ')})` : '';
+                 let blockMessage = `Waduh ${userName}, pembuatan gambar diblokir (${candidate.finishReason})${safetyRatings}. Coba prompt yang berbeda ya.`;
+                 if (candidate.finishReason === 'SAFETY') {
+                    blockMessage = `Maaf ${userName}, gambarmu dianggap tidak aman (SAFETY). Coba prompt yang lebih umum ya.${safetyRatings}`;
+                 } else if (candidate.finishReason === 'RECITATION') {
+                    blockMessage = `Maaf ${userName}, gambarmu terlalu mirip dengan materi berhak cipta (RECITATION). Coba prompt yang lebih unik.`;
+                 }
+                 return { error: blockMessage };
+            }
+        }
+
+        const imagePart = candidate.content?.parts?.find(part => part.inlineData);
+
+        if (imagePart?.inlineData?.data && imagePart?.inlineData?.mimeType) {
+            console.log(`Image successfully generated for chat ${chatId}. MimeType: ${imagePart.inlineData.mimeType}`);
+            const textPart = candidate.content?.parts?.find(part => part.text);
+            const textFallback = textPart ? stripMarkdown(textPart.text) : null;
+
+            return {
+                base64Data: imagePart.inlineData.data,
+                mimeType: imagePart.inlineData.mimeType,
+                textFallback: textFallback
+            };
+        } else {
+             const textPart = candidate.content?.parts?.find(part => part.text);
+             if (textPart?.text) {
+                 console.warn(`Gemini Image API (${modelToUse}) returned text instead of image for chat ${chatId}: "${textPart.text.substring(0,100)}..."`);
+                 // Berikan pesan error yang lebih informatif jika AI mengembalikan teks
+                 return { error: `Hmm ${userName}, AI tidak menghasilkan gambar, tapi bilang: "${stripMarkdown(textPart.text)}"` };
+             } else {
+                console.error(`Gemini Image response format unexpected or missing image data for chat ${chatId}.`, JSON.stringify(response.data, null, 2));
+                return { error: `Waduh ${userName}, respons AI-nya aneh nih, nggak ada data gambarnya.` };
+             }
+        }
+
+    } catch (error) {
+        console.error(`Error calling Gemini Image API (${modelToUse}) for chat ${chatId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        let errorMsg = `Duh ${userName}, maaf banget nih, ada gangguan pas bikin gambar pake AI. Coba lagi nanti ya.`;
+        if (error.code === 'ECONNABORTED' || (error.message && error.message.toLowerCase().includes('timeout'))) { errorMsg = `Aduh ${userName}, kelamaan nih nunggu AI bikin gambarnya, coba lagi aja`; }
+        else if (error.response && error.response.status === 429) { errorMsg = `Waduh ${userName}, kebanyakan minta gambar nih kayaknya, coba santai dulu bentar`; }
+        else if (error.response?.data?.error) {
+            const apiError = error.response.data.error;
+            // Handle specific API errors
+            if (apiError.message && apiError.message.includes('response_mime_type')) {
+                 // Error ini seharusnya tidak muncul lagi, tapi sebagai fallback
+                 errorMsg = `Waduh ${userName}, ada masalah konfigurasi internal saat minta gambar. Coba kontak admin. (Detail: ${apiError.message})`;
+            } else if (apiError.message && apiError.message.includes("API key not valid")) {
+                 errorMsg = `Waduh ${userName}, API Key Gemini sepertinya salah atau belum diatur nih. Cek konfigurasi ya.`;
+            } else if (apiError.message && apiError.message.includes("quota")) {
+                 errorMsg = `Aduh ${userName}, jatah bikin gambar (${modelToUse}) habis nih kayaknya. Coba lagi besok atau hubungi admin.`;
+            } else if (apiError.message && apiError.message.includes("Request payload size")) {
+                 errorMsg = `Waduh ${userName}, prompt gambarnya kepanjangan. Coba dipersingkat.`;
+            } else if (apiError.message && (apiError.message.includes("SAFETY") || apiError.code === 400 && apiError.status === "INVALID_ARGUMENT")) { // More general check for safety/invalid prompt issues
+                errorMsg = `Maaf ${userName}, prompt gambarmu mungkin dianggap tidak aman atau tidak valid. Coba prompt yang berbeda atau lebih umum ya. (${apiError.message})`;
+            } else if (apiError.message && apiError.message.includes("internal")) { // Catch internal errors
+                 errorMsg = `Aduh ${userName}, server AI gambar lagi ada masalah internal nih. Coba beberapa saat lagi. (${apiError.message})`;
+            }
+             else {
+                // Default error message from API if not caught above
+                errorMsg = `Error dari AI Gambar (${apiError.code || error.response.status}): ${apiError.message || 'Gagal memproses'}. Coba cek lagi ${userName}.`;
+            }
+        } else if (error.response && error.response.status >= 500) {
+             errorMsg = `Aduh ${userName}, kayaknya server AI gambar lagi ada masalah internal nih (${error.response.status}). Coba beberapa saat lagi.`;
+        }
+        return { error: errorMsg };
+    }
+}
 
 
 async function handleInlineQuery(inlineQuery, res) {
@@ -584,7 +594,7 @@ async function handleInlineQuery(inlineQuery, res) {
                 console.log(`Cleaned up temporary inline context: ${contextId}`);
             }
 
-            if (aiResponseObject && aiResponseObject.text && !aiResponseObject.text.toLowerCase().includes("gagal") && !aiResponseObject.text.toLowerCase().includes("maaf")) {
+            if (aiResponseObject && aiResponseObject.text && !aiResponseObject.text.toLowerCase().includes("gagal") && !aiResponseObject.text.toLowerCase().includes("maaf") && !aiResponseObject.text.toLowerCase().includes("error")) {
                 const responseText = aiResponseObject.text;
                 const title = `${enableGrounding ? 'Info' : 'Chat'}: ${promptForAI.substring(0, 40)}${promptForAI.length > 40 ? '...' : ''}`;
                 const description = responseText.substring(0, 100) + (responseText.length > 100 ? '...' : '');
@@ -831,7 +841,6 @@ module.exports = async (req, res) => {
                 }
             }
 
-            // Start Block for Grounding Trigger Check (Modified Part)
             if (!shouldProcessAI) {
                 enableGrounding = false;
                 let groundingTriggerFound = false;
@@ -875,9 +884,7 @@ module.exports = async (req, res) => {
                     }
                 }
 
-                 // Continue with chat triggers / private / group logic ONLY if grounding trigger wasn't found/processed
                 if (!groundingTriggerFound && !shouldProcessAI) {
-                     // --- Handle Private Chat ---
                     if (chatType === 'private') {
                          if (messageText) {
                             shouldProcessAI = true;
@@ -903,7 +910,6 @@ module.exports = async (req, res) => {
                              shouldProcessAI = false;
                         }
                     }
-                    // --- Handle Group/Supergroup Chat ---
                     else if (chatType === 'group' || chatType === 'supergroup') {
                         let textTriggerFound = false;
 
@@ -977,9 +983,8 @@ module.exports = async (req, res) => {
                          }
                         shouldProcessAI = false;
                     }
-                } // End of if (!groundingTriggerFound && !shouldProcessAI)
-            } // End of if (!shouldProcessAI) checking after vision attempt
-            // End Block for Grounding Trigger Check
+                }
+            }
 
         }
 
