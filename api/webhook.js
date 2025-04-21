@@ -315,13 +315,13 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
                     console.warn("Could not format any valid sources from grounding attributions.");
                 }
 
-                if (enableGrounding) {
-                    generationConfig.responseMimeType = "text/plain"; // Grounding needs plain text
-                    generationConfig.thinkingConfig = {
-                        thinkingBudget: 0
-                    };
-                    console.log(`Grounding enabled, setting thinkingBudget: 0 for chat ${chatId}`);
-                }
+            } else if (enableGrounding) {
+                generationConfig.responseMimeType = "text/plain"; // Grounding needs plain text
+                generationConfig.thinkingConfig = {
+                    thinkingBudget: 0
+                };
+                console.log(`Grounding enabled, setting thinkingBudget: 0 for chat ${chatId}`);
+            }
 
             return { text: finalResponseText.trim(), parseMode: null };
 
