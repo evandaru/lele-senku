@@ -235,7 +235,7 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
         },
         contents: history.filter(h => h.role === 'user' || h.role === 'model'),
         generationConfig: {
-            temperature: 0.8,
+            temperature: 0.7,
             topP: 0.9,
             thinkingConfig: {
                 thinkingBudget: 0
