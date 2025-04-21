@@ -9,7 +9,6 @@ const userNicknames = require('./userNicknames.js');
 
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const GEMINI_VISION_MODEL_NAME = "gemini-2.0-flash";
-// const GEMINI_TEXT_MODEL_NAME = "gemini-2.0-flash";
 const GEMINI_TEXT_MODEL_NAME = "gemini-2.5-flash-preview-04-17";
 const GEMINI_IMAGE_MODEL_NAME = "gemini-2.0-flash-exp-image-generation";
 const GEMINI_API_URL_BASE = `https://generativelanguage.googleapis.com/v1beta/models/`;
@@ -238,9 +237,9 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
         generationConfig: {
             temperature: 0.7,
             topP: 0.9,
-            // thinkingConfig: {
-            //     thinkingBudget: 0
-            // }
+            thinkingConfig: {
+                thinkingBudget: 0
+            }
         },
     };
 
@@ -316,11 +315,7 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
                 }
 
             } else if (enableGrounding) {
-                generationConfig.responseMimeType = "text/plain"; // Grounding needs plain text
-                generationConfig.thinkingConfig = {
-                    thinkingBudget: 0
-                };
-                console.log(`Grounding enabled, setting thinkingBudget: 0 for chat ${chatId}`);
+                console.log("Grounding was enabled, but no attributions found in response.");
             }
 
             return { text: finalResponseText.trim(), parseMode: null };
