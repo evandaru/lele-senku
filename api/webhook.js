@@ -238,9 +238,9 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
         generationConfig: {
             temperature: 0.7,
             topP: 0.9,
-            thinkingConfig: {
-                thinkingBudget: 0
-            }
+            // thinkingConfig: {
+            //     thinkingBudget: 0
+            // }
         },
     };
 
