@@ -8,9 +8,9 @@ const systemInstructionText = require('./systemInstruction.js');
 const userNicknames = require('./userNicknames.js');
 
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
-const GEMINI_VISION_MODEL_NAME = "gemini-2.5-flash-preview-04-17";
-const GEMINI_TEXT_MODEL_NAME = "gemini-2.5-flash-preview-04-17";
-const GEMINI_IMAGE_MODEL_NAME = "gemini-2.0-flash-exp-image-generation";
+const GEMINI_VISION_MODEL_NAME = process.env.GEMINI_VISION_MODEL_NAME;
+const GEMINI_TEXT_MODEL_NAME = process.env.GEMINI_TEXT_MODEL_NAME;
+const GEMINI_IMAGE_MODEL_NAME = process.env.GEMINI_IMAGE_MODEL_NAME;
 const GEMINI_API_URL_BASE = `https://generativelanguage.googleapis.com/v1beta/models/`;
 
 // --- Fungsi sendMessage --
@@ -20,120 +20,98 @@ async function sendMessage(chatId, text, replyToMessageId = null) {
         return;
     }
 
-    // Tangani teks kosong atau hanya spasi di awal
     if (!text || text.trim() === '') {
         console.warn(`Attempted to send empty or whitespace-only message to ${chatId}. Sending fallback.`);
-        text = "(Pesan kosong)"; // Gunakan fallback jika teks asli kosong
+        text = "(Pesan kosong)"; 
     }
 
     const MAX_LENGTH = 4096;
     let remainingText = text;
     let isFirstChunk = true;
-    let currentReplyToId = replyToMessageId; // Simpan ID balasan awal
+    let currentReplyToId = replyToMessageId;
 
     while (remainingText.length > 0) {
         let chunkToSend;
         let nextChunkStartIndex = 0;
 
-        // Jika sisa teks masih melebihi batas
         if (remainingText.length > MAX_LENGTH) {
-            // Coba potong di newline terakhir sebelum MAX_LENGTH
-            let splitPoint = remainingText.lastIndexOf('\n', MAX_LENGTH - 1); // -1 untuk memberi ruang jika perlu
+            let splitPoint = remainingText.lastIndexOf('\n', MAX_LENGTH - 1); 
 
-            // Jika tidak ada newline atau terlalu awal, coba potong di spasi terakhir
-            if (splitPoint === -1 || splitPoint < MAX_LENGTH * 0.8) { // Prioritaskan spasi jika newline terlalu dekat awal
+            if (splitPoint === -1 || splitPoint < MAX_LENGTH * 0.8) { 
                 splitPoint = remainingText.lastIndexOf(' ', MAX_LENGTH - 1);
             }
 
-            // Jika tidak ada spasi atau newline yang cocok, potong paksa di MAX_LENGTH
-            if (splitPoint === -1 || splitPoint < MAX_LENGTH * 0.5) { // Jangan potong terlalu awal jika kata sangat panjang
+            if (splitPoint === -1 || splitPoint < MAX_LENGTH * 0.5) { 
                 splitPoint = MAX_LENGTH - 1;
             }
 
-            chunkToSend = remainingText.substring(0, splitPoint + 1); // Ambil chunk termasuk pemisah
+            chunkToSend = remainingText.substring(0, splitPoint + 1); 
             nextChunkStartIndex = splitPoint + 1;
 
         } else {
-            // Jika sisa teks sudah pas atau kurang dari batas
             chunkToSend = remainingText;
             nextChunkStartIndex = remainingText.length;
         }
 
-        // Hapus spasi/newline di awal chunk berikutnya (jika ada)
         remainingText = remainingText.substring(nextChunkStartIndex).trimStart();
 
-        // Tambahkan indikator "(lanjutan)" untuk chunk kedua dan seterusnya
-        // Pastikan tidak menambahkannya jika chunk aslinya kosong setelah trim
         if (!isFirstChunk && chunkToSend.trim()) {
             const prefix = "(lanjutan)\n";
-            // Periksa apakah penambahan prefix akan melebihi batas
             if (prefix.length + chunkToSend.length <= MAX_LENGTH) {
                 chunkToSend = prefix + chunkToSend;
             } else {
-                // Jika penambahan prefix membuat > MAX_LENGTH, kirim tanpa prefix
-                // Atau, bisa juga dipotong lagi, tapi lebih aman kirim apa adanya
                 console.warn(`Chunk for ${chatId} cannot have '(lanjutan)' prefix due to length limit.`);
-                // Alternatif lain: potong chunk sedikit untuk memberi ruang prefix
-                // chunkToSend = prefix + chunkToSend.substring(0, MAX_LENGTH - prefix.length - 5) + "...";
             }
         }
 
-        // Siapkan payload untuk dikirim
         const payload = {
             chat_id: chatId,
             text: chunkToSend,
             disable_web_page_preview: true
         };
 
-        // Hanya tambahkan reply_to_message_id ke chunk pertama
         if (isFirstChunk && currentReplyToId) {
             payload.reply_to_message_id = currentReplyToId;
         }
 
         try {
-            // Kirim chunk saat ini
             await axios.post(`${TELEGRAM_API}/sendMessage`, payload);
             console.log(`Message chunk sent to ${chatId}` + (payload.reply_to_message_id ? ` in reply to ${payload.reply_to_message_id}` : '') + ` (length: ${chunkToSend.length})`);
 
-            isFirstChunk = false; // Set flag agar chunk berikutnya tidak me-reply
+            isFirstChunk = false; 
 
-            // Beri jeda singkat antar pesan untuk menghindari rate limiting (opsional tapi disarankan)
             if (remainingText.length > 0) {
-                await new Promise(resolve => setTimeout(resolve, 300)); // Jeda 300ms
+                await new Promise(resolve => setTimeout(resolve, 300)); 
             }
 
         } catch (error) {
             console.error(`Error sending message chunk to ${chatId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
 
-            // Coba fallback jika error karena parsing (khusus untuk chunk ini)
             if (error.response && error.response.status === 400 && error.response.data.description.includes("can't parse entities")) {
                 console.warn(`!!! Potential formatting issue in chunk for ${chatId}. Raw text snippet: ${chunkToSend.substring(0, 100)}...`);
-                const fallbackText = chunkToSend.replace(/[*_`\[\]()]/g, ''); // Hapus karakter Markdown potensial
+                const fallbackText = chunkToSend.replace(/[*_`\[\]()]/g, ''); 
                 try {
                     console.log(`Attempting fallback send (chunk) without formatting chars to ${chatId}`);
-                    const fallbackPayload = { ...payload, text: fallbackText.substring(0, MAX_LENGTH) }; // Pastikan tidak melebihi batas lagi
+                    const fallbackPayload = { ...payload, text: fallbackText.substring(0, MAX_LENGTH) }; 
                     await axios.post(`${TELEGRAM_API}/sendMessage`, fallbackPayload);
                     console.log(`Fallback chunk sent successfully to ${chatId}`);
-                    isFirstChunk = false; // Tetap set flag jika fallback berhasil
+                    isFirstChunk = false; 
 
-                    // Beri jeda singkat setelah fallback
                     if (remainingText.length > 0) {
                         await new Promise(resolve => setTimeout(resolve, 300));
                     }
 
                 } catch (fallbackError) {
                     console.error(`Fallback send (chunk) also failed for ${chatId}:`, fallbackError.response ? JSON.stringify(fallbackError.response.data, null, 2) : fallbackError.message);
-                    // Jika fallback gagal, hentikan pengiriman sisa chunk untuk pesan ini
                     console.error(`Stopping further message chunks for this message to ${chatId} due to send error.`);
-                    break; // Keluar dari loop while
+                    break; 
                 }
             } else {
-                // Jika error lain (misal network, bot diblokir), hentikan pengiriman sisa chunk
                 console.error(`Stopping further message chunks for this message to ${chatId} due to non-parsing send error.`);
-                break; // Keluar dari loop while
+                break; 
             }
         }
-    } // Akhir while loop
+    } 
 }
 // --- Akhir Fungsi sendMessage ---
 
@@ -367,45 +345,37 @@ async function getGeminiResponse(chatId, newUserPrompt, userName = 'mas', enable
             aiResponseText = stripMarkdown(aiResponseText);
             console.log("AI text after stripping Markdown:", aiResponseText.substring(0, 100) + "...");
 
-            // Simpan history setelah stripMarkdown, sebelum menambahkan sumber
             history.push({ role: "model", parts: [{ text: aiResponseText }] });
             chatHistories[chatId] = history;
 
             let finalResponseText = aiResponseText;
             let parseMode = null;
 
-            // >>>>>> GANTI DENGAN KODE INI <<<<<<
             if (groundingAttributions && groundingAttributions.length > 0) {
                 console.log("Grounding attributions found:", groundingAttributions.length);
 
-                // Filter for valid URIs and extract unique hostnames
                 const sourceHostnames = groundingAttributions
                     .map(source => {
                         try {
-                            // Attempt to parse URI and get hostname
                             const url = new URL(source.uri);
-                            // Remove www. for cleaner look, handle cases where hostname might be empty
                             return url.hostname ? url.hostname.replace(/^www\./, '') : null;
                         } catch (e) {
                             console.warn(`Could not parse URI "${source.uri}" for hostname:`, e.message);
-                            return null; // Ignore invalid URIs
+                            return null; 
                         }
                     })
-                    .filter(hostname => hostname) // Remove null entries (invalid URIs or empty hostnames)
-                    .filter((hostname, index, self) => self.indexOf(hostname) === index); // Get unique hostnames
+                    .filter(hostname => hostname) 
+                    .filter((hostname, index, self) => self.indexOf(hostname) === index);
 
                 if (sourceHostnames.length > 0) {
                     finalResponseText += "\n\n__\nsource : " + sourceHostnames.join(", ");
                     console.log(`Formatted ${sourceHostnames.length} unique source hostnames.`);
                 } else {
                     console.warn("Grounding was enabled, but no valid hostnames extracted from attributions.");
-                    // Jika grounding aktif tapi tidak ada sumber yang valid, bisa tambahkan catatan opsional
-                    // finalResponseText += "\n\n(Grounding enabled, but no valid sources found)";
                 }
 
             } else if (enableGrounding) {
                 console.log("Grounding was enabled, but no attributions returned by API.");
-                // Tidak ada sumber yang perlu ditampilkan jika API tidak mengembalikan attributions
             }
 
             return { text: finalResponseText.trim(), parseMode: null };
