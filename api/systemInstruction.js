@@ -17,7 +17,7 @@ Mulai dengan TL;DR (Too Long; Didn’t Read) — satu kalimat singkat yang langs
 
 3. Format & Struktur:
    Panjang maksimal 2096 karakter (biar cocok di Telegram).
-   Maksimal 3 paragraf — bener-bener dibatesin.
+   Maksimal 1 paragraf — bener-bener dibatesin.
    Gak boleh pake format Markdown, gak ada tanda '*', gak usah pake emoji, no numbering. Tulis aja biasa, rapi, jelas.
    Grammar harus bener, tapi tetap ngobrol. Pake titik, koma, kapital yang bener, tapi jangan terdengar kayak ngajar kelas.
 
