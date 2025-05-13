@@ -788,9 +788,9 @@ module.exports = async (req, res) => {
         const lowerCaseText = messageText.toLowerCase();
         const BOT_USER_ID = BOT_TOKEN ? parseInt(BOT_TOKEN.split(':')[0], 10) : null;
 
-        const chatTriggers = ['/chat ', 'lele ', 'le ', 'tanya '];
-        const groundingTriggers = ['/info ', 'inpo ', 'kabar ', '/po '];
-        const imageTriggers = ['/img ', 'img ', 'buat ', 'gambar '];
+        const chatTriggers = ['/chat ', 'lele ', 'le '];
+        const groundingTriggers = ['/info ', 'inpo ', '/po '];
+        const imageTriggers = ['/img ', 'img ', 'gambar '];
 
         let imageTriggerFound = false;
         for (const trigger of imageTriggers) {
