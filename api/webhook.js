@@ -13,7 +13,7 @@ const GEMINI_TEXT_MODEL_NAME = process.env.GEMINI_TEXT_MODEL_NAME;
 const GEMINI_IMAGE_MODEL_NAME = process.env.GEMINI_IMAGE_MODEL_NAME;
 const GEMINI_API_URL_BASE = `https://generativelanguage.googleapis.com/v1beta/models/`;
 
-// --- Fungsi sendMessage --
+// --- Fungsi sendMessage -- 
 async function sendMessage(chatId, text, replyToMessageId = null) {
     if (!BOT_TOKEN) {
         console.error("Bot token is not set.");
