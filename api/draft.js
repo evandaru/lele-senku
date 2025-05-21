@@ -53,5 +53,6 @@ additional information (NOT important)
 
 `;
 
+
 // Ekspor teks
 module.exports = systemInstructionText;
